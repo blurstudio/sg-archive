@@ -1,0 +1,6 @@
+click
+deepdiff
+pathlib2
+pyyaml
+shotgun_api3
+six
