@@ -1,0 +1,32 @@
+---
+# To prevent accidentally leaking connection details, the connection details
+# are stored in a separate yml file. Relative file paths are based in the
+# same directory as the current file.
+connection_file: config_example_secret.yml
+
+# These settings are used to filter unused information from the schema
+# selected data output
+ignored:
+  # Don't include any columns on any entities with this data type
+  data_types:
+    - pivot_column
+
+  # Don't show these entities when listing available entities
+  entities:
+    - WorkDayRule
+
+  # Don't show these columns when selecting a specific entity
+  columns:
+    Version:
+      - viewed_by_current_user
+      - viewed_by_current_user_at
+
+# Filters can be used to define shotgun_api3 filters for each entity.
+# https://developers.shotgridsoftware.com/python-api/reference.html#shotgun_api3.shotgun.Shotgun.find
+# These are stored per entity_type
+
+# filters:
+#   Version:
+#     [
+#       # ['id', 'in', [1644005, 1664127, 1665190, 1665434]]
+#     ]
