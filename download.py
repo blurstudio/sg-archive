@@ -2,7 +2,9 @@ import click
 import io
 import json
 import math
+import os
 import shutil
+import six
 import sys
 import time
 import yaml
@@ -60,7 +62,7 @@ class DateTimeEncoder(json.JSONEncoder):
 
 
 class Connection(object):
-    def __init__(self, config, output, filtered=True, strict=False):
+    def __init__(self, config, output, download=True, filtered=True, strict=False):
         self.config = yaml.load(config.open(), Loader=yaml.Loader)
         if "connection" in self.config:
             self.connection = self.config.pop("connection")
@@ -68,9 +70,10 @@ class Connection(object):
             conn_file = config.parent.joinpath(self.config["connection_file"])
             self.connection = yaml.load(conn_file.open(), Loader=yaml.Loader)
 
+        self.download = download
+        self.filtered = filtered
         self.output = output
         self.strict = strict
-        self.filtered = filtered
 
     def clean(self):
         click.echo('Clean: Removing "{}" and its contents'.format(self.output))
@@ -78,7 +81,17 @@ class Connection(object):
 
     def download_table(self, table, query, limit, max_pages):
         click.echo("Processing: {}".format(table))
-        (self.output / "data").mkdir(exist_ok=True, parents=True)
+        data_dir = self.output / "data" / table
+        data_dir.mkdir(exist_ok=True, parents=True)
+
+        # Save the schema for just this table so its easier to inspect
+        table_schema = data_dir / "_schema.json"
+        self.save_json(self.schema[table], table_schema)
+        urls = [
+            k
+            for k, v in self.schema[table].items()
+            if v["data_type"]["value"] in ("url", "image")
+        ]
 
         count = self.sg.summarize(
             table,
@@ -111,7 +124,12 @@ class Connection(object):
             msg = "  Selected {} {} in {:.5} seconds."
             click.echo(msg.format(len(out), table, e - s))
 
-            filename = self.output / "data" / "{}_{}.json".format(table, page)
+            if self.download:
+                for entity in out:
+                    for column in urls:
+                        self.download_url(entity, column, data_dir)
+
+            filename = data_dir / "{}_{}.json".format(table, page)
             self.save_json(out, filename)
 
             if self.strict:
@@ -126,6 +144,36 @@ class Connection(object):
                     assert out == check, '\n'.join(msg)
 
         click.echo("  Total: {}, count: {}".format(total, count))
+
+    def download_url(self, entity, column, dest):
+        url_info = entity[column]
+        if url_info is None:
+            return None, None
+        if isinstance(url_info, six.string_types):
+            url = url_info
+            parse = six.moves.urllib.parse.urlparse(url)
+            name = os.path.basename(parse.path)
+            # Convert the str into a dict so we can store the downloaded path
+            url_info = {"url": url, "name": name, "__type__": "str"}
+            entity[column] = url_info
+        else:
+            url = url_info["url"]
+            name = url_info["name"]
+        click.echo("    Downloading: {}".format(name))
+        dest_fn = dest / "files" / column / "{}-{}".format(entity["id"], name)
+        dest_fn.parent.mkdir(exist_ok=True, parents=True)
+        # Safety check for duplicate local file paths
+        if dest_fn.exists():
+            raise RuntimeError(
+                "Destination already exists: {}".format(dest_fn),
+            )
+        fn, headers = six.moves.urllib.request.urlretrieve(url, str(dest_fn))
+
+        # Store the relative file path to the file we just downloaded in the
+        # data we will save into the json data
+        url_info["local_path"] = str(Path(fn).relative_to(dest))
+
+        return Path(fn), headers
 
     def find(self, table, query, **kwargs):
         if "fields" not in kwargs:
@@ -231,8 +279,13 @@ class Connection(object):
     help="Double check that the json saved to disk can be restored back to "
     "the original value.",
 )
+@click.option(
+    "--download/--no-download",
+    default=True,
+    help="Download attachments when downloading entities.",
+)
 @click.pass_context
-def main(ctx, config, output, strict):
+def main(ctx, config, output, strict, download):
     # ensure that ctx.obj exists and is a dict (in case `cli()` is called
     # by means other than the `if` block below)
     ctx.ensure_object(dict)
@@ -243,7 +296,7 @@ def main(ctx, config, output, strict):
         output = ROOT_DIR / "output"
     output = ROOT_DIR.joinpath(output)
 
-    conn = Connection(config, output, strict=strict)
+    conn = Connection(config, output, strict=strict, download=download)
     ctx.obj["conn"] = conn
     # Check the connection to SG
     conn.sg
