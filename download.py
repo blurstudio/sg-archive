@@ -113,7 +113,10 @@ class Connection(object):
             )
         )
         total = 0
+        file_map = {}
         for page in range(1, page_count + 1):
+            filename = data_dir / "{}_{}.json".format(table, page)
+
             s = time.time()
             out = self.find(table, query, limit=limit, page=page)
             e = time.time()
@@ -129,21 +132,25 @@ class Connection(object):
                     for column in urls:
                         self.download_url(entity, column, data_dir)
 
-            filename = data_dir / "{}_{}.json".format(table, page)
+            # Update the file_map data for this select
+            out = self.make_index(out)
+            file_map.update({sgid: filename.name for sgid in out})
+
+            # Save this page data to disk
             self.save_json(out, filename)
 
+            # Check that the data we saved matches the input data
             if self.strict:
                 with filename.open() as fle:
                     check = json.load(fle, cls=DateTimeDecoder)
                 if out != check:
-                    msg = [
-                        pformat(out),
-                        '-' * 50,
-                        pformat(check),
-                    ]
+                    msg = [pformat(out), '-' * 50, pformat(check)]
                     assert out == check, '\n'.join(msg)
 
         click.echo("  Total: {}, count: {}".format(total, count))
+
+        # Save a map of which paged file contains the data for a given sgid.
+        self.save_json(file_map, data_dir / "_page_index.json")
 
     def download_url(self, entity, column, dest):
         url_info = entity[column]
@@ -180,6 +187,23 @@ class Connection(object):
             kwargs["fields"] = list(self.schema[table].keys())
 
         return self.sg.find(table, query, **kwargs)
+
+    def make_index(self, data, key="id"):
+        """Convert a list of records into a dict of the key value.
+
+        The key is converted to a str so it can be stored in json without modification.
+        """
+        if self.strict:
+            ret = {}
+            for row in data:
+                sgid = row[key]
+                if sgid in ret:
+                    raise ValueError(
+                        "Duplicate record found: {}:{}".format(row["entity_type"], sgid)
+                    )
+                ret[str(sgid)] = row
+            return ret
+        return {str(row[key]): row for row in data}
 
     @property
     def sg(self):
