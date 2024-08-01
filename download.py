@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib2 import Path
 from pprint import pformat
 from shotgun_api3.shotgun import Shotgun
+from shotgun_api3.lib import mockgun
 
 ROOT_DIR = Path(__file__).parent
 
@@ -161,11 +162,12 @@ class Connection(object):
             parse = six.moves.urllib.parse.urlparse(url)
             name = os.path.basename(parse.path)
             # Convert the str into a dict so we can store the downloaded path
-            url_info = {"url": url, "name": name, "__type__": "str"}
+            url_info = {"url": url, "name": name, "__download_type": "image"}
             entity[column] = url_info
         else:
             url = url_info["url"]
             name = url_info["name"]
+            url_info["__download_type"] = "url"
         click.echo("    Downloading: {}".format(name))
         dest_fn = dest / "files" / column / "{}-{}".format(entity["id"], name)
         dest_fn.parent.mkdir(exist_ok=True, parents=True)
@@ -281,6 +283,13 @@ class Connection(object):
         click.echo("Saving schema to {}".format(output))
         output.parent.mkdir(exist_ok=True, parents=True)
         self.save_json(self.schema_full, output)
+
+        # Save the schema for mockgun to restore later
+        mockgun.generate_schema(
+            self.sg,
+            str(output.parent / 'schema.pickle'),
+            str(output.parent / 'schema_entity.pickle'),
+        )
 
 
 @click.group()
