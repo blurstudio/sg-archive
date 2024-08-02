@@ -8,6 +8,8 @@ import six
 import sys
 import time
 import yaml
+import concurrent.futures
+import urllib.request
 
 from datetime import datetime
 from pathlib2 import Path
@@ -63,7 +65,9 @@ class DateTimeEncoder(json.JSONEncoder):
 
 
 class Connection(object):
-    def __init__(self, config, output, download=True, filtered=True, strict=False):
+    def __init__(
+        self, config, output, download=True, filtered=True, strict=False, verbosity=0
+    ):
         self.config = yaml.load(config.open(), Loader=yaml.Loader)
         if "connection" in self.config:
             self.connection = self.config.pop("connection")
@@ -75,6 +79,7 @@ class Connection(object):
         self.filtered = filtered
         self.output = output
         self.strict = strict
+        self.verbosity = verbosity
 
     def clean(self):
         click.echo('Clean: Removing "{}" and its contents'.format(self.output))
@@ -114,49 +119,64 @@ class Connection(object):
             )
         )
         total = 0
+        total_download = 0
         file_map = {}
-        for page in range(1, page_count + 1):
-            filename = data_dir / "{}_{}.json".format(table, page)
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            for page in range(1, page_count + 1):
+                filename = data_dir / "{}_{}.json".format(table, page)
 
-            s = time.time()
-            out = self.find(table, query, limit=limit, page=page)
-            e = time.time()
-            total += len(out)
-            if not out:
-                click.echo("  Stopping, no remaining records")
-                break
-            msg = "  Selected {} {} in {:.5} seconds."
-            click.echo(msg.format(len(out), table, e - s))
+                s = time.time()
+                out = self.find(table, query, limit=limit, page=page)
+                e = time.time()
+                total += len(out)
+                if not out:
+                    click.echo("  Stopping, no remaining records")
+                    break
+                msg = "  Selected {} {} in {:.5} seconds."
+                click.echo(msg.format(len(out), table, e - s))
 
-            if self.download:
-                for entity in out:
-                    for column in urls:
-                        self.download_url(entity, column, data_dir)
+                if self.download:
+                    for entity in out:
+                        for column in urls:
+                            dl = self.download_url(entity, column, data_dir, executor)
+                            if dl is not None:
+                                total_download += 1
 
-            # Update the file_map data for this select
-            out = self.make_index(out)
-            file_map.update({sgid: filename.name for sgid in out})
+                # Update the file_map data for this select
+                out = self.make_index(out)
+                file_map.update({sgid: filename.name for sgid in out})
 
-            # Save this page data to disk
-            self.save_json(out, filename)
+                # Save this page data to disk
+                self.save_json(out, filename)
 
-            # Check that the data we saved matches the input data
-            if self.strict:
-                with filename.open() as fle:
-                    check = json.load(fle, cls=DateTimeDecoder)
-                if out != check:
-                    msg = [pformat(out), '-' * 50, pformat(check)]
-                    assert out == check, '\n'.join(msg)
+                # Check that the data we saved matches the input data
+                if self.strict:
+                    with filename.open() as fle:
+                        check = json.load(fle, cls=DateTimeDecoder)
+                    if out != check:
+                        msg = [pformat(out), '-' * 50, pformat(check)]
+                        assert out == check, '\n'.join(msg)
 
-        click.echo("  Total: {}, count: {}".format(total, count))
+            click.echo("  Waiting for any remaining downloads.")
+
+        click.echo(
+            "  {} Records saved: {}, Total in SG: {}, Files downloaded: {}".format(
+                table, total, count, total_download
+            )
+        )
 
         # Save a map of which paged file contains the data for a given sgid.
         self.save_json(file_map, data_dir / "_page_index.json")
 
-    def download_url(self, entity, column, dest):
+    def download_url(self, entity, column, dest, executor):
+        def worker(url, dest_name):
+            six.moves.urllib.request.urlretrieve(url, str(dest_name))
+            if self.verbosity:
+                click.echo(f'    Download Finished: {dest_name.name}')
+
         url_info = entity[column]
         if url_info is None:
-            return None, None
+            return None
         if isinstance(url_info, six.string_types):
             url = url_info
             parse = six.moves.urllib.parse.urlparse(url)
@@ -168,21 +188,23 @@ class Connection(object):
             url = url_info["url"]
             name = url_info["name"]
             url_info["__download_type"] = "url"
-        click.echo("    Downloading: {}".format(name))
         dest_fn = dest / "files" / column / "{}-{}".format(entity["id"], name)
+        if self.verbosity:
+            click.echo("    Downloading: {}".format(dest_fn.name))
         dest_fn.parent.mkdir(exist_ok=True, parents=True)
         # Safety check for duplicate local file paths
         if dest_fn.exists():
             raise RuntimeError(
                 "Destination already exists: {}".format(dest_fn),
             )
-        fn, headers = six.moves.urllib.request.urlretrieve(url, str(dest_fn))
+        # fn, headers = six.moves.urllib.request.urlretrieve(url, str(dest_fn))
+        executor.submit(worker, url, dest_fn)
 
         # Store the relative file path to the file we just downloaded in the
         # data we will save into the json data
-        url_info["local_path"] = str(Path(fn).relative_to(dest))
+        url_info["local_path"] = str(dest_fn.relative_to(dest))
 
-        return Path(fn), headers
+        return dest_fn
 
     def find(self, table, query, **kwargs):
         if "fields" not in kwargs:
@@ -317,8 +339,15 @@ class Connection(object):
     default=True,
     help="Download attachments when downloading entities.",
 )
+@click.option(
+    "-v",
+    "--verbose",
+    "verbosity",
+    count=True,
+    help="Increase the verbosity of the output.",
+)
 @click.pass_context
-def main(ctx, config, output, strict, download):
+def main(ctx, config, output, strict, download, verbosity):
     # ensure that ctx.obj exists and is a dict (in case `cli()` is called
     # by means other than the `if` block below)
     ctx.ensure_object(dict)
@@ -329,7 +358,9 @@ def main(ctx, config, output, strict, download):
         output = ROOT_DIR / "output"
     output = ROOT_DIR.joinpath(output)
 
-    conn = Connection(config, output, strict=strict, download=download)
+    conn = Connection(
+        config, output, strict=strict, download=download, verbosity=verbosity
+    )
     ctx.obj["conn"] = conn
     # Check the connection to SG
     conn.sg
