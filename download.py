@@ -86,7 +86,8 @@ class Connection(object):
         shutil.rmtree(str(self.output))
 
     def download_table(self, table, query, limit, max_pages):
-        click.echo("Processing: {}".format(table))
+        display_name = self.schema_entity[table]['name']['value']
+        click.echo("Processing: {} ({})".format(table, display_name))
         data_dir = self.output / "data" / table
         data_dir.mkdir(exist_ok=True, parents=True)
 
@@ -121,19 +122,20 @@ class Connection(object):
         total = 0
         total_download = 0
         file_map = {}
+
+        total_start = time.time()
         with concurrent.futures.ThreadPoolExecutor() as executor:
             for page in range(1, page_count + 1):
                 filename = data_dir / "{}_{}.json".format(table, page)
 
-                s = time.time()
+                sel_start = time.time()
                 out = self.find(table, query, limit=limit, page=page)
-                e = time.time()
+                sel_end = time.time()
                 total += len(out)
                 if not out:
-                    click.echo("  Stopping, no remaining records")
                     break
                 msg = "  Selected {} {} in {:.5} seconds."
-                click.echo(msg.format(len(out), table, e - s))
+                click.echo(msg.format(len(out), table, sel_end - sel_start))
 
                 if self.download:
                     for entity in out:
@@ -157,11 +159,17 @@ class Connection(object):
                         msg = [pformat(out), '-' * 50, pformat(check)]
                         assert out == check, '\n'.join(msg)
 
-            click.echo("  Waiting for any remaining downloads.")
+            total_end = time.time()
+            click.echo(
+                "    Finished selecting pages in {:.5} seconds. Waiting for "
+                "any remaining downloads.".format(total_end - total_start)
+            )
+        total_end = time.time()
 
         click.echo(
-            "  {} Records saved: {}, Total in SG: {}, Files downloaded: {}".format(
-                table, total, count, total_download
+            "  {} Records saved: {}, Total in SG: {}, Files "
+            "downloaded: {} in {:.5} seconds".format(
+                table, total, count, total_download, total_end - total_start
             )
         )
 
@@ -188,7 +196,13 @@ class Connection(object):
             url = url_info["url"]
             name = url_info["name"]
             url_info["__download_type"] = "url"
-        dest_fn = dest / "files" / column / "{}-{}".format(entity["id"], name)
+        # Sanitize the name so we can use it in a file path
+        if name is None:
+            name = str(entity["id"])
+        else:
+            name = name.replace("\\", "_").replace("/", "_")
+            name = "{}-{}".format(entity["id"], name)
+        dest_fn = dest / "files" / column / name
         if self.verbosity:
             click.echo("    Downloading: {}".format(dest_fn.name))
         dest_fn.parent.mkdir(exist_ok=True, parents=True)
@@ -272,6 +286,31 @@ class Connection(object):
                 ret[table] = out_table
         return ret
 
+    @property
+    def schema_entity(self):
+        try:
+            return self._schema_entity
+        except AttributeError:
+            self._schema_entity = self.schema_entity_full
+            if self.filtered:
+                self._schema_entity = self.filter_schema_entity(self._schema_entity)
+        return self._schema_entity
+
+    @property
+    def schema_entity_full(self):
+        try:
+            return self._schema_entity_full
+        except AttributeError:
+            self._schema_entity_full = self.sg.schema_entity_read()
+        return self._schema_entity_full
+
+    def filter_schema_entity(self, schema_entity):
+        ignored = self.config.get("ignored", {}).get("tables", [])
+        schema_entity = {
+            k: v for k, v in schema_entity.items() if v["visible"]["value"]
+        }
+        return {k: v for k, v in schema_entity.items() if k not in ignored}
+
     def save_json(self, data, output):
         if sys.version_info.major == 2:
             # Deal with unicode in python 2
@@ -301,16 +340,20 @@ class Connection(object):
                     cls=DateTimeEncoder,
                 )
 
-    def save_schema(self, output):
-        click.echo("Saving schema to {}".format(output))
-        output.parent.mkdir(exist_ok=True, parents=True)
-        self.save_json(self.schema_full, output)
+    def save_schema(self):
+        fn_schema = self.output / "schema.json"
+        fn_schema_entity = self.output / "schema_entity.json"
+
+        click.echo("Saving schema")
+        self.output.mkdir(exist_ok=True, parents=True)
+        self.save_json(self.schema_full, fn_schema)
+        self.save_json(self.schema_entity_full, fn_schema_entity)
 
         # Save the schema for mockgun to restore later
         mockgun.generate_schema(
             self.sg,
-            str(output.parent / 'schema.pickle'),
-            str(output.parent / 'schema_entity.pickle'),
+            str(self.output / 'schema.pickle'),
+            str(self.output / 'schema_entity.pickle'),
         )
 
 
@@ -366,6 +409,29 @@ def main(ctx, config, output, strict, download, verbosity):
     conn.sg
 
 
+@main.command(name="list")
+@click.pass_context
+def list_click(ctx):
+    """Lists the filtred tables and their display names found in the schema."""
+    conn = ctx.obj["conn"]
+    rows = []
+    width_1 = 4
+    width_2 = 12
+    for table_name, table in conn.schema_entity.items():
+        display_name = table['name']['value']
+        width_1 = max(len(table_name), width_1)
+        if table_name == display_name:
+            rows.append((table_name, ""))
+        else:
+            rows.append((table_name, display_name))
+            width_2 = max(len(table_name), width_2)
+
+    click.echo(f"{'Code Name':{width_1+1}} Display Name")
+    click.echo(f"{'':=<{width_1}} {'':=<{width_2}}")
+    for row in rows:
+        click.echo(f"{row[0]:{width_1+1}}{row[1]}")
+
+
 @main.command()
 @click.option(
     '--schema/--no-schema',
@@ -404,7 +470,16 @@ def save(ctx, schema, tables, limit, max_pages, clean):
         conn.clean()
 
     if schema:
-        conn.save_schema(conn.output / "schema.json")
+        conn.save_schema()
+
+    if "all" in tables:
+        tables = conn.schema_entity.keys()
+    elif "missing" in tables:
+        tables = [
+            table
+            for table in conn.schema_entity
+            if not (conn.output / "data" / table).exists()
+        ]
 
     for table in tables:
         query = conn.config.get("filters", {}).get(table, [])
