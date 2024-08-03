@@ -1,4 +1,3 @@
-import click
 import concurrent.futures
 import io
 import json
@@ -9,6 +8,7 @@ import six
 import sys
 import time
 import yaml
+import logging
 
 from pathlib2 import Path
 from pprint import pformat
@@ -17,6 +17,7 @@ from shotgun_api3.lib import mockgun
 from utils import DateTimeDecoder, DateTimeEncoder
 
 ROOT_DIR = Path(__file__).parent
+logger = logging.getLogger(__name__)
 
 
 class Connection(object):
@@ -37,12 +38,12 @@ class Connection(object):
         self.verbosity = verbosity
 
     def clean(self):
-        click.echo('Clean: Removing "{}" and its contents'.format(self.output))
+        logger.info('Clean: Removing "{}" and its contents'.format(self.output))
         shutil.rmtree(str(self.output))
 
     def download_table(self, table, query, limit, max_pages):
         display_name = self.schema_entity[table]['name']['value']
-        click.echo("Processing: {} ({})".format(table, display_name))
+        logger.info("Processing: {} ({})".format(table, display_name))
         data_dir = self.output / "data" / table
         data_dir.mkdir(exist_ok=True, parents=True)
 
@@ -69,7 +70,7 @@ class Connection(object):
         else:
             page_count = max_pages
 
-        click.echo(
+        logger.info(
             "  Total records: {}, limit: {}, total pages: {}".format(
                 count, limit, page_count
             )
@@ -90,7 +91,7 @@ class Connection(object):
                 if not out:
                     break
                 msg = "  Selected {} {} in {:.5} seconds."
-                click.echo(msg.format(len(out), table, sel_end - sel_start))
+                logger.info(msg.format(len(out), table, sel_end - sel_start))
 
                 if self.download:
                     for entity in out:
@@ -115,13 +116,13 @@ class Connection(object):
                         assert out == check, '\n'.join(msg)
 
             total_end = time.time()
-            click.echo(
+            logger.info(
                 "    Finished selecting pages in {:.5} seconds. Waiting for "
                 "any remaining downloads.".format(total_end - total_start)
             )
         total_end = time.time()
 
-        click.echo(
+        logger.info(
             "  {} Records saved: {}, Total in SG: {}, Files "
             "downloaded: {} in {:.5} seconds".format(
                 table, total, count, total_download, total_end - total_start
@@ -135,7 +136,7 @@ class Connection(object):
         def worker(url, dest_name):
             six.moves.urllib.request.urlretrieve(url, str(dest_name))
             if self.verbosity:
-                click.echo(f'    Download Finished: {dest_name.name}')
+                logger.info(f'    Download Finished: {dest_name.name}')
 
         url_info = entity[column]
         if url_info is None:
@@ -159,7 +160,7 @@ class Connection(object):
             name = "{}-{}".format(entity["id"], name)
         dest_fn = dest / "files" / column / name
         if self.verbosity:
-            click.echo("    Downloading: {}".format(dest_fn.name))
+            logger.info("    Downloading: {}".format(dest_fn.name))
         dest_fn.parent.mkdir(exist_ok=True, parents=True)
         # Safety check for duplicate local file paths
         if dest_fn.exists():
@@ -184,7 +185,8 @@ class Connection(object):
     def make_index(self, data, key="id"):
         """Convert a list of records into a dict of the key value.
 
-        The key is converted to a str so it can be stored in json without modification.
+        The key is converted to a str so it can be stored in json
+        without modification.
         """
         if self.strict:
             ret = {}
@@ -204,7 +206,7 @@ class Connection(object):
             return self._sg
         except AttributeError:
             self._sg = Shotgun(**self.connection)
-            click.echo("Connected: to {}".format(self.connection["base_url"]))
+            logger.info("Connected: to {}".format(self.connection["base_url"]))
         return self._sg
 
     @property
@@ -299,7 +301,7 @@ class Connection(object):
         fn_schema = self.output / "schema.json"
         fn_schema_entity = self.output / "schema_entity.json"
 
-        click.echo("Saving schema")
+        logger.info("Saving schema")
         self.output.mkdir(exist_ok=True, parents=True)
         self.save_json(self.schema_full, fn_schema)
         self.save_json(self.schema_entity_full, fn_schema_entity)
@@ -310,136 +312,3 @@ class Connection(object):
             str(self.output / 'schema.pickle'),
             str(self.output / 'schema_entity.pickle'),
         )
-
-
-@click.group()
-@click.option(
-    '-c',
-    '--config',
-    type=click.Path(exists=True, file_okay=True, resolve_path=True),
-    default="config.yml",
-    help='The path to a config yaml file used to connect to ShotGrid.',
-)
-@click.option(
-    "-o",
-    "--output",
-    type=click.Path(dir_okay=True, resolve_path=True),
-    help="The directory to store all output in.",
-)
-@click.option(
-    "--strict/--no-strict",
-    default=False,
-    help="Double check that the json saved to disk can be restored back to "
-    "the original value.",
-)
-@click.option(
-    "--download/--no-download",
-    default=True,
-    help="Download attachments when downloading entities.",
-)
-@click.option(
-    "-v",
-    "--verbose",
-    "verbosity",
-    count=True,
-    help="Increase the verbosity of the output.",
-)
-@click.pass_context
-def main(ctx, config, output, strict, download, verbosity):
-    # ensure that ctx.obj exists and is a dict (in case `cli()` is called
-    # by means other than the `if` block below)
-    ctx.ensure_object(dict)
-
-    config = Path(config)
-
-    if output is None:
-        output = ROOT_DIR / "output"
-    output = ROOT_DIR.joinpath(output)
-
-    conn = Connection(
-        config, output, strict=strict, download=download, verbosity=verbosity
-    )
-    ctx.obj["conn"] = conn
-    # Check the connection to SG
-    conn.sg
-
-
-@main.command(name="list")
-@click.pass_context
-def list_click(ctx):
-    """Lists the filtred tables and their display names found in the schema."""
-    conn = ctx.obj["conn"]
-    rows = []
-    width_1 = 4
-    width_2 = 12
-    for table_name, table in conn.schema_entity.items():
-        display_name = table['name']['value']
-        width_1 = max(len(table_name), width_1)
-        if table_name == display_name:
-            rows.append((table_name, ""))
-        else:
-            rows.append((table_name, display_name))
-            width_2 = max(len(table_name), width_2)
-
-    click.echo(f"{'Code Name':{width_1+1}} Display Name")
-    click.echo(f"{'':=<{width_1}} {'':=<{width_2}}")
-    for row in rows:
-        click.echo(f"{row[0]:{width_1+1}}{row[1]}")
-
-
-@main.command()
-@click.option(
-    '--schema/--no-schema',
-    default=True,
-    help="Save the SG schema to schema.json in output.",
-)
-@click.option(
-    "-t",
-    "--table",
-    "tables",
-    multiple=True,
-    help="Limit the output to these tables. Can be used multiple times.",
-)
-@click.option(
-    "--limit",
-    type=int,
-    default=50,
-    help="Limit to a maximum of this many results.",
-)
-@click.option(
-    "--max-pages",
-    type=int,
-    help="Stop downloading records after this many pages even if there are "
-    "still results left to download. Page size is controlled by `--limit`.",
-)
-@click.option(
-    "--clean/--no-clean",
-    default=False,
-    help="Clean the output before processing any other commands.",
-)
-@click.pass_context
-def save(ctx, schema, tables, limit, max_pages, clean):
-    conn = ctx.obj["conn"]
-
-    if clean:
-        conn.clean()
-
-    if schema:
-        conn.save_schema()
-
-    if "all" in tables:
-        tables = conn.schema_entity.keys()
-    elif "missing" in tables:
-        tables = [
-            table
-            for table in conn.schema_entity
-            if not (conn.output / "data" / table).exists()
-        ]
-
-    for table in tables:
-        query = conn.config.get("filters", {}).get(table, [])
-        conn.download_table(table, query, limit, max_pages)
-
-
-if __name__ == '__main__':
-    main()
