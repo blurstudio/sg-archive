@@ -11,15 +11,15 @@ class DateTimeDecoder(json.JSONDecoder):
         super(DateTimeDecoder, self).__init__(*args, **kargs)
 
     def dict_to_object(self, d):
-        if '__type__' not in d:
+        if "__type__" not in d:
             return d
 
-        _type = d.pop('__type__')
+        _type = d.pop("__type__")
         try:
             dateobj = datetime(**d)
             return dateobj
         except Exception:
-            d['__type__'] = _type
+            d["__type__"] = _type
             return d
 
 
@@ -33,14 +33,14 @@ class DateTimeEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, datetime):
             return {
-                '__type__': 'datetime',
-                'year': obj.year,
-                'month': obj.month,
-                'day': obj.day,
-                'hour': obj.hour,
-                'minute': obj.minute,
-                'second': obj.second,
-                'microsecond': obj.microsecond,
+                "__type__": "datetime",
+                "year": obj.year,
+                "month": obj.month,
+                "day": obj.day,
+                "hour": obj.hour,
+                "minute": obj.minute,
+                "second": obj.second,
+                "microsecond": obj.microsecond,
             }
         else:
             return json.JSONEncoder.default(self, obj)

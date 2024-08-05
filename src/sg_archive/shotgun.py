@@ -1,6 +1,7 @@
 import json
 import logging
 from pathlib import Path
+
 from shotgun_api3.lib import mockgun
 
 from .utils import DateTimeDecoder
@@ -17,12 +18,13 @@ class Shotgun(mockgun.Shotgun):
         >>> sg.load_tables()
         >>> sg.find(...)
     """
+
     def __init__(
-        self, data_root, *args, base_url='https://invalid.localhost', **kwargs
+        self, data_root, *args, base_url="https://invalid.localhost", **kwargs
     ):
         self.data_root = Path(data_root)
-        schema_file = self.data_root / 'schema.pickle'
-        schema_entity_file = self.data_root / 'schema_entity.pickle'
+        schema_file = self.data_root / "schema.pickle"
+        schema_entity_file = self.data_root / "schema_entity.pickle"
         mockgun.Shotgun.set_schema_paths(schema_file, schema_entity_file)
         super(Shotgun, self).__init__(base_url, *args, **kwargs)
 

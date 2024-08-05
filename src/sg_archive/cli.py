@@ -1,6 +1,7 @@
-import click
 import logging
 from pathlib import Path
+
+import click
 
 from .connection import Connection
 
@@ -11,11 +12,11 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
 @click.group(context_settings=CONTEXT_SETTINGS)
 @click.option(
-    '-c',
-    '--config',
+    "-c",
+    "--config",
     type=click.Path(exists=True, file_okay=True, resolve_path=True),
     default="config.yml",
-    help='The path to a config yaml file used to connect to ShotGrid.',
+    help="The path to a config yaml file used to connect to ShotGrid.",
 )
 @click.option(
     "-o",
@@ -72,7 +73,7 @@ def list_click(ctx):
     width_1 = 4
     width_2 = 12
     for table_name, table in conn.schema_entity.items():
-        display_name = table['name']['value']
+        display_name = table["name"]["value"]
         width_1 = max(len(table_name), width_1)
         if table_name == display_name:
             rows.append((table_name, ""))
@@ -88,7 +89,7 @@ def list_click(ctx):
 
 @main.command()
 @click.option(
-    '--schema/--no-schema',
+    "--schema/--no-schema",
     default=True,
     help="Save the SG schema to schema.json in output.",
 )
@@ -145,5 +146,5 @@ def archive(ctx, schema, tables, limit, max_pages, clean):
     click.echo("Finished archiving tables.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

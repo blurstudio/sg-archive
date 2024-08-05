@@ -9,12 +9,12 @@ import sys
 import time
 import urllib.parse
 import urllib.request
-import yaml
-
 from pathlib import Path
 from pprint import pformat
-from shotgun_api3.shotgun import Shotgun
+
+import yaml
 from shotgun_api3.lib import mockgun
+from shotgun_api3.shotgun import Shotgun
 
 from .utils import DateTimeDecoder, DateTimeEncoder
 
@@ -44,7 +44,7 @@ class Connection(object):
         shutil.rmtree(str(self.output))
 
     def download_table(self, table, query, limit, max_pages):
-        display_name = self.schema_entity[table]['name']['value']
+        display_name = self.schema_entity[table]["name"]["value"]
         logger.info("Processing: {} ({})".format(table, display_name))
         data_dir = self.output / "data" / table
         data_dir.mkdir(exist_ok=True, parents=True)
@@ -114,8 +114,8 @@ class Connection(object):
                     with filename.open() as fle:
                         check = json.load(fle, cls=DateTimeDecoder)
                     if out != check:
-                        msg = [pformat(out), '-' * 50, pformat(check)]
-                        assert out == check, '\n'.join(msg)
+                        msg = [pformat(out), "-" * 50, pformat(check)]
+                        assert out == check, "\n".join(msg)
 
             total_end = time.time()
             logger.info(
@@ -138,7 +138,7 @@ class Connection(object):
         def worker(url, dest_name):
             urllib.request.urlretrieve(url, str(dest_name))
             if self.verbosity:
-                logger.info(f'    Download Finished: {dest_name.name}')
+                logger.info(f"    Download Finished: {dest_name.name}")
 
         url_info = entity[column]
         if url_info is None:
@@ -272,7 +272,7 @@ class Connection(object):
     def save_json(self, data, output):
         if sys.version_info.major == 2:
             # Deal with unicode in python 2
-            with io.open(str(output), 'w', encoding="utf-8") as outfile:
+            with io.open(str(output), "w", encoding="utf-8") as outfile:
                 my_json_str = json.dumps(
                     data,
                     indent=4,
@@ -285,7 +285,7 @@ class Connection(object):
 
                 # remove trailing white space for consistency with python 3
                 lines = [line.rstrip() for line in my_json_str.splitlines()]
-                my_json_str = '\n'.join(lines)
+                my_json_str = "\n".join(lines)
                 outfile.write(my_json_str)
         else:
             # Python 3 is much easier
@@ -310,6 +310,6 @@ class Connection(object):
         # Save the schema for mockgun to restore later
         mockgun.generate_schema(
             self.sg,
-            str(self.output / 'schema.pickle'),
-            str(self.output / 'schema_entity.pickle'),
+            str(self.output / "schema.pickle"),
+            str(self.output / "schema_entity.pickle"),
         )
