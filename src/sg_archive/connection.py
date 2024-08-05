@@ -39,6 +39,13 @@ class Connection(object):
         self.strict = strict
         self.verbosity = verbosity
 
+        # File download processing variables
+        self.pending_downloads = []
+        self.executor = None
+        # Wait for all pending downloads if more than X are pending before
+        # processing another page of results.
+        self.limit_download_count = 500
+
     def clean(self):
         logger.info('Clean: Removing "{}" and its contents'.format(self.output))
         shutil.rmtree(str(self.output))
@@ -82,8 +89,18 @@ class Connection(object):
         file_map = {}
 
         total_start = time.time()
-        with concurrent.futures.ThreadPoolExecutor() as executor:
+        with concurrent.futures.ThreadPoolExecutor() as self.executor:
             for page in range(1, page_count + 1):
+                # Process pending downloads before the links expire.
+                pending_count = len(self.pending_downloads)
+                if pending_count > self.limit_download_count:
+                    logger.info(
+                        f"    Waiting for {pending_count} pending downloads to "
+                        "ensure the download links don't expire."
+                    )
+                    concurrent.futures.wait(self.pending_downloads)
+                    self.pending_downloads = []
+
                 filename = data_dir / "{}_{}.json".format(table, page)
 
                 sel_start = time.time()
@@ -98,7 +115,7 @@ class Connection(object):
                 if self.download:
                     for entity in out:
                         for column in urls:
-                            dl = self.download_url(entity, column, data_dir, executor)
+                            dl = self.download_url(entity, column, data_dir)
                             if dl is not None:
                                 total_download += 1
 
@@ -119,8 +136,8 @@ class Connection(object):
 
             total_end = time.time()
             logger.info(
-                "    Finished selecting pages in {:.5} seconds. Waiting for "
-                "any remaining downloads.".format(total_end - total_start)
+                f"    Finished selecting pages in {total_end - total_start:.5} "
+                f"seconds. Waiting for {len(self.pending_downloads)} remaining downloads."
             )
         total_end = time.time()
 
@@ -134,7 +151,7 @@ class Connection(object):
         # Save a map of which paged file contains the data for a given sgid.
         self.save_json(file_map, data_dir / "_page_index.json")
 
-    def download_url(self, entity, column, dest, executor):
+    def download_url(self, entity, column, dest):
         def worker(url, dest_name):
             urllib.request.urlretrieve(url, str(dest_name))
             if self.verbosity:
@@ -169,7 +186,7 @@ class Connection(object):
             raise RuntimeError(
                 "Destination already exists: {}".format(dest_fn),
             )
-        executor.submit(worker, url, dest_fn)
+        self.pending_downloads.append(self.executor.submit(worker, url, dest_fn))
 
         # Store the relative file path to the file we just downloaded in the
         # data we will save into the json data
