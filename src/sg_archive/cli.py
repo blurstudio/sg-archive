@@ -67,19 +67,19 @@ def main(ctx, config, output, strict, download, verbosity):
 @main.command(name="list")
 @click.pass_context
 def list_click(ctx):
-    """Lists the filtred tables and their display names found in the schema."""
+    """Lists the filtered entity_types and their display names found in the schema."""
     conn = ctx.obj["conn"]
     rows = []
     width_1 = 4
     width_2 = 12
-    for table_name, table in conn.schema_entity.items():
-        display_name = table["name"]["value"]
-        width_1 = max(len(table_name), width_1)
-        if table_name == display_name:
-            rows.append((table_name, ""))
+    for entity_type_name, entity_type in conn.schema_entity.items():
+        display_name = entity_type["name"]["value"]
+        width_1 = max(len(entity_type_name), width_1)
+        if entity_type_name == display_name:
+            rows.append((entity_type_name, ""))
         else:
-            rows.append((table_name, display_name))
-            width_2 = max(len(table_name), width_2)
+            rows.append((entity_type_name, display_name))
+            width_2 = max(len(entity_type_name), width_2)
 
     click.echo(f"{'Code Name':{width_1+1}} Display Name")
     click.echo(f"{'':=<{width_1}} {'':=<{width_2}}")
@@ -94,11 +94,14 @@ def list_click(ctx):
     help="Save the SG schema to schema.json in output.",
 )
 @click.option(
-    "-t",
-    "--table",
-    "tables",
+    "-e",
+    "--entity-type",
+    "entity_types",
     multiple=True,
-    help="Limit the output to these tables. Can be used multiple times.",
+    help="Archive these entitity types. Can be used multiple times. If 'all' is "
+    "passed all non-ignored entity types are archived. If 'missing' is passed "
+    "then it will archive all non-ignored entity types but will skip any that "
+    "already have their entity_type folder created in output.",
 )
 @click.option(
     "--limit",
@@ -118,7 +121,7 @@ def list_click(ctx):
     help="Clean the output before processing any other commands.",
 )
 @click.pass_context
-def archive(ctx, schema, tables, limit, max_pages, clean):
+def archive(ctx, schema, entity_types, limit, max_pages, clean):
     conn = ctx.obj["conn"]
 
     if clean:
@@ -127,23 +130,23 @@ def archive(ctx, schema, tables, limit, max_pages, clean):
     if schema:
         conn.save_schema()
 
-    if "all" in tables:
-        tables = conn.schema_entity.keys()
-    elif "missing" in tables:
-        tables = [
-            table
-            for table in conn.schema_entity
-            if not (conn.output / "data" / table).exists()
+    if "all" in entity_types:
+        entity_types = conn.schema_entity.keys()
+    elif "missing" in entity_types:
+        entity_types = [
+            entity_type
+            for entity_type in conn.schema_entity
+            if not (conn.output / "data" / entity_type).exists()
         ]
 
     click.echo("")
-    click.echo("Processing Tables:")
-    for table in tables:
-        query = conn.config.get("filters", {}).get(table, [])
-        conn.download_table(table, query, limit, max_pages)
+    click.echo("Processing Entity Types:")
+    for entity_type in entity_types:
+        query = conn.config.get("filters", {}).get(entity_type, [])
+        conn.download_entity_type(entity_type, query, limit, max_pages)
 
     click.echo("")
-    click.echo("Finished archiving tables.")
+    click.echo("Finished archiving entity types.")
 
 
 if __name__ == "__main__":

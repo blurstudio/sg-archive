@@ -50,23 +50,23 @@ class Connection(object):
         logger.info('Clean: Removing "{}" and its contents'.format(self.output))
         shutil.rmtree(str(self.output))
 
-    def download_table(self, table, query, limit, max_pages):
-        display_name = self.schema_entity[table]["name"]["value"]
-        logger.info("Processing: {} ({})".format(table, display_name))
-        data_dir = self.output / "data" / table
+    def download_entity_type(self, entity_type, query, limit, max_pages):
+        display_name = self.schema_entity[entity_type]["name"]["value"]
+        logger.info("Processing: {} ({})".format(entity_type, display_name))
+        data_dir = self.output / "data" / entity_type
         data_dir.mkdir(exist_ok=True, parents=True)
 
-        # Save the schema for just this table so its easier to inspect
-        table_schema = data_dir / "_schema.json"
-        self.save_json(self.schema[table], table_schema)
+        # Save the schema for just this entity_type so its easier to inspect
+        entity_type_schema = data_dir / "_schema.json"
+        self.save_json(self.schema[entity_type], entity_type_schema)
         urls = [
             k
-            for k, v in self.schema[table].items()
+            for k, v in self.schema[entity_type].items()
             if v["data_type"]["value"] in ("url", "image")
         ]
 
         count = self.sg.summarize(
-            table,
+            entity_type,
             filters=query,
             summary_fields=[
                 {"field": "id", "type": "count"},
@@ -101,21 +101,21 @@ class Connection(object):
                     concurrent.futures.wait(self.pending_downloads)
                     self.pending_downloads = []
 
-                filename = data_dir / "{}_{}.json".format(table, page)
+                filename = data_dir / "{}_{}.json".format(entity_type, page)
 
                 sel_start = time.time()
-                out = self.find(table, query, limit=limit, page=page)
+                out = self.find(entity_type, query, limit=limit, page=page)
                 sel_end = time.time()
                 total += len(out)
                 if not out:
                     break
                 msg = "  Selected {} {} in {:.5} seconds."
-                logger.info(msg.format(len(out), table, sel_end - sel_start))
+                logger.info(msg.format(len(out), entity_type, sel_end - sel_start))
 
                 if self.download:
                     for entity in out:
-                        for column in urls:
-                            dl = self.download_url(entity, column, data_dir)
+                        for field in urls:
+                            dl = self.download_url(entity, field, data_dir)
                             if dl is not None:
                                 total_download += 1
 
@@ -144,20 +144,20 @@ class Connection(object):
         logger.info(
             "  {} Records saved: {}, Total in SG: {}, Files "
             "downloaded: {} in {:.5} seconds".format(
-                table, total, count, total_download, total_end - total_start
+                entity_type, total, count, total_download, total_end - total_start
             )
         )
 
         # Save a map of which paged file contains the data for a given sgid.
         self.save_json(file_map, data_dir / "_page_index.json")
 
-    def download_url(self, entity, column, dest):
+    def download_url(self, entity, field, dest):
         def worker(url, dest_name):
             urllib.request.urlretrieve(url, str(dest_name))
             if self.verbosity:
                 logger.info(f"    Download Finished: {dest_name.name}")
 
-        url_info = entity[column]
+        url_info = entity[field]
         if url_info is None:
             return None
         if isinstance(url_info, str):
@@ -166,7 +166,7 @@ class Connection(object):
             name = os.path.basename(parse.path)
             # Convert the str into a dict so we can store the downloaded path
             url_info = {"url": url, "name": name, "__download_type": "image"}
-            entity[column] = url_info
+            entity[field] = url_info
         else:
             url = url_info["url"]
             name = url_info["name"]
@@ -177,7 +177,7 @@ class Connection(object):
         else:
             name = name.replace("\\", "_").replace("/", "_")
             name = "{}-{}".format(entity["id"], name)
-        dest_fn = dest / "files" / column / name
+        dest_fn = dest / "files" / field / name
         if self.verbosity:
             logger.info("    Downloading: {}".format(dest_fn.name))
         dest_fn.parent.mkdir(exist_ok=True, parents=True)
@@ -194,11 +194,11 @@ class Connection(object):
 
         return dest_fn
 
-    def find(self, table, query, **kwargs):
+    def find(self, entity_type, query, **kwargs):
         if "fields" not in kwargs:
-            kwargs["fields"] = list(self.schema[table].keys())
+            kwargs["fields"] = list(self.schema[entity_type].keys())
 
-        return self.sg.find(table, query, **kwargs)
+        return self.sg.find(entity_type, query, **kwargs)
 
     def make_index(self, data, key="id"):
         """Convert a list of records into a dict of the key value.
@@ -248,17 +248,17 @@ class Connection(object):
     def filter_schema(self, schema):
         ignored = self.config.get("ignored", {})
         ret = {}
-        for table in schema:
-            out_table = {}
-            columns = ignored.get("columns", {}).get(table, [])
-            for column, value in schema[table].items():
+        for entity_type in schema:
+            out_entity_type = {}
+            fields = ignored.get("fields", {}).get(entity_type, [])
+            for field, value in schema[entity_type].items():
                 if value["data_type"]["value"] in ignored.get("data_types"):
                     continue
-                if column in columns:
+                if field in fields:
                     continue
-                out_table[column] = value
-            if out_table:
-                ret[table] = out_table
+                out_entity_type[field] = value
+            if out_entity_type:
+                ret[entity_type] = out_entity_type
         return ret
 
     @property
@@ -280,7 +280,7 @@ class Connection(object):
         return self._schema_entity_full
 
     def filter_schema_entity(self, schema_entity):
-        ignored = self.config.get("ignored", {}).get("tables", [])
+        ignored = self.config.get("ignored", {}).get("entity_types", [])
         schema_entity = {
             k: v for k, v in schema_entity.items() if v["visible"]["value"]
         }

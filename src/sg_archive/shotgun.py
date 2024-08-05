@@ -15,7 +15,7 @@ class Shotgun(mockgun.Shotgun):
     Example:
 
         >>>  sg = connection.Shotgun("c:/temp/archived_root")
-        >>> sg.load_tables()
+        >>> sg.load_entity_types()
         >>> sg.find(...)
     """
 
@@ -28,17 +28,17 @@ class Shotgun(mockgun.Shotgun):
         mockgun.Shotgun.set_schema_paths(schema_file, schema_entity_file)
         super(Shotgun, self).__init__(base_url, *args, **kwargs)
 
-    def field_names_for_table(self, table):
-        """Provides a list of the field names for a given table."""
-        # TODO: Use the config to ignore columns
-        return self._schema[table].keys()
+    def field_names_for_entity_type(self, entity_type):
+        """Provides a list of the field names for a given entity_type."""
+        # TODO: Use the config to ignore fields
+        return self._schema[entity_type].keys()
 
-    def load_table(self, table):
-        """Load all table data for a specific table archived in data_root."""
-        logger.info(f"Loading table: {table}")
+    def load_entity_type(self, entity_type):
+        """Load all entity_type data for a specific entity_type archived in data_root."""
+        logger.info(f"Loading entity_type: {entity_type}")
 
-        table_root = self.data_root / "data" / table
-        for fn in table_root.glob(f"{table}_*.json"):
+        entity_type_root = self.data_root / "data" / entity_type
+        for fn in entity_type_root.glob(f"{entity_type}_*.json"):
             data = json.load(fn.open(), cls=DateTimeDecoder)
             modified = {}
             for k, v in data.items():
@@ -56,11 +56,11 @@ class Shotgun(mockgun.Shotgun):
 
                 modified[int(k)] = v
 
-            self._db[table].update(modified)
+            self._db[entity_type].update(modified)
 
-    def load_tables(self):
-        """Load table data for all archived tables found in from data_root."""
+    def load_entity_types(self):
+        """Load entity_type data for all archived entity_types found in from data_root."""
         for directory in (self.data_root / "data").iterdir():
             if not directory.is_dir():
                 continue
-            self.load_table(directory.name)
+            self.load_entity_type(directory.name)

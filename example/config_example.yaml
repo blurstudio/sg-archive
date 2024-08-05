@@ -1,0 +1,39 @@
+---
+# To prevent accidentally leaking connection details, the connection details
+# are stored in a separate yaml file. Relative file paths are based in the
+# same directory as the current file.
+connection_file: config_example_secret.yaml
+
+# These settings are used to filter unused information from the schema
+# selected data output
+ignored:
+  # Don't include any fields on any entities with this data type
+  data_types:
+    - pivot_column
+
+  # Don't show these entities when listing available entities. These are
+  # respected when using the all and missing entity_types in the cli.
+  # `Attachments` normally don't need archived as the file down-loader takes
+  # care of downloading them.
+  # `EventLogEntry` likely won't make sense to archive as its a very verbose
+  # record of all changes made to most other tables over the last 6 months.
+  entities:
+    - Attachment
+    - EventLogEntry
+    - WorkDayRule
+
+  # Don't show these fields when selecting a specific entity
+  fields:
+    Version:
+      - viewed_by_current_user
+      - viewed_by_current_user_at
+
+# Filters can be used to define shotgun_api3 filters for each entity.
+# https://developers.shotgridsoftware.com/python-api/reference.html#shotgun_api3.shotgun.Shotgun.find
+# These are stored per entity_type
+
+# filters:
+#   Version:
+#     [
+#       # ['id', 'in', [105, 127, 190, 434]]
+#     ]
