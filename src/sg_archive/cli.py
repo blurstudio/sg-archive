@@ -1,13 +1,15 @@
 import click
 import logging
-from pathlib2 import Path
+from pathlib import Path
 
-from connection import Connection
+from .connection import Connection
 
 ROOT_DIR = Path(__file__).parent
+# Enable support for `-h` to show help
+CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
 
-@click.group()
+@click.group(context_settings=CONTEXT_SETTINGS)
 @click.option(
     '-c',
     '--config',
@@ -41,6 +43,8 @@ ROOT_DIR = Path(__file__).parent
 )
 @click.pass_context
 def main(ctx, config, output, strict, download, verbosity):
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     # ensure that ctx.obj exists and is a dict (in case `cli()` is called
     # by means other than the `if` block below)
     ctx.ensure_object(dict)
@@ -142,5 +146,4 @@ def archive(ctx, schema, tables, limit, max_pages, clean):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

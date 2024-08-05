@@ -1,20 +1,22 @@
 import concurrent.futures
 import io
 import json
+import logging
 import math
 import os
 import shutil
-import six
 import sys
 import time
+import urllib.parse
+import urllib.request
 import yaml
-import logging
 
-from pathlib2 import Path
+from pathlib import Path
 from pprint import pformat
 from shotgun_api3.shotgun import Shotgun
 from shotgun_api3.lib import mockgun
-from utils import DateTimeDecoder, DateTimeEncoder
+
+from .utils import DateTimeDecoder, DateTimeEncoder
 
 ROOT_DIR = Path(__file__).parent
 logger = logging.getLogger(__name__)
@@ -134,16 +136,16 @@ class Connection(object):
 
     def download_url(self, entity, column, dest, executor):
         def worker(url, dest_name):
-            six.moves.urllib.request.urlretrieve(url, str(dest_name))
+            urllib.request.urlretrieve(url, str(dest_name))
             if self.verbosity:
                 logger.info(f'    Download Finished: {dest_name.name}')
 
         url_info = entity[column]
         if url_info is None:
             return None
-        if isinstance(url_info, six.string_types):
+        if isinstance(url_info, str):
             url = url_info
-            parse = six.moves.urllib.parse.urlparse(url)
+            parse = urllib.parse.urlparse(url)
             name = os.path.basename(parse.path)
             # Convert the str into a dict so we can store the downloaded path
             url_info = {"url": url, "name": name, "__download_type": "image"}
@@ -167,7 +169,6 @@ class Connection(object):
             raise RuntimeError(
                 "Destination already exists: {}".format(dest_fn),
             )
-        # fn, headers = six.moves.urllib.request.urlretrieve(url, str(dest_fn))
         executor.submit(worker, url, dest_fn)
 
         # Store the relative file path to the file we just downloaded in the

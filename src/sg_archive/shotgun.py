@@ -1,9 +1,9 @@
 import json
 import logging
-from pathlib2 import Path
+from pathlib import Path
 from shotgun_api3.lib import mockgun
 
-from utils import DateTimeDecoder
+from .utils import DateTimeDecoder
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,7 @@ class Shotgun(mockgun.Shotgun):
 
     def field_names_for_table(self, table):
         """Provides a list of the field names for a given table."""
+        # TODO: Use the config to ignore columns
         return self._schema[table].keys()
 
     def load_table(self, table):

@@ -1,0 +1,97 @@
+[build-system]
+requires = [
+    "setuptools >= 44.1.1",
+    "setuptools-scm[toml] >= 4, < 8",
+    "wheel >= 0.36",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sg-archive"
+description = "Tools to download bulk data from Flow Production Tracking(ShotGrid)."
+authors = [{name = "Blur Studio", email = "opensource@blur.com"}]
+license = {text = "LGPL-3.0"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "click",
+    "pyyaml",
+    "shotgun_api3",
+]
+dynamic = ["version"]
+
+[project.readme]
+file = "README.md"
+content-type = "text/markdown"
+
+[project.urls]
+Homepage = "https://github.com/blurstudio/sg-archive"
+Source = "https://github.com/blurstudio/sg-archive"
+Tracker = "https://github.com/blurstudio/sg-archive/issues"
+
+[project.optional-dependencies]
+dev = [
+    "black==22.12.0",
+    "build",
+    "covdefaults",
+    "coverage",
+    "flake8==5.0.4",
+    "flake8-bugbear==22.12.6",
+    "Flake8-pyproject",
+    "isort",
+    "json5",
+    "pep8-naming==0.13.3",
+    "pytest",
+    "tox",
+    "build",
+]
+
+[project.scripts]
+sg-archive = "sg_archive.cli:main"
+
+[tool.setuptools]
+platforms = ["any"]
+license-files = ["LICENSE"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
+write_to = "src/sg_archive/version.py"
+version_scheme = "release-branch-semver"
+
+[tool.isort]
+profile = "black"
+
+[tool.flake8]
+select = ["B", "C", "E", "F", "N", "W", "B9"]
+extend-ignore = [
+    "E203",
+    "E501",
+    "E722",
+    "W503",
+]
+max-line-length = "88"
+exclude = [
+    "*.egg-info",
+    "*.pyc",
+    ".cache",
+    ".eggs",
+    ".git",
+    ".tox",
+    "__pycache__",
+    "build",
+    "dist",
+    ".venv"
+]
