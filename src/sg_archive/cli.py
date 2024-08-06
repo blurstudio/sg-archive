@@ -1,4 +1,5 @@
 import logging
+import pickle
 from pathlib import Path
 
 import click
@@ -119,11 +120,16 @@ def list_click(ctx):
     "-f",
     "--format",
     "formats",
-    default=["pickle"],
+    default=["pickle-high"],
     multiple=True,
-    type=click.Choice(["pickle", "json"]),
+    type=click.Choice(
+        ["pickle-high", "pickle-default"]
+        + [f"pickle-{i}" for i in range(pickle.HIGHEST_PROTOCOL, -1, -1)]
+        + ["json"]
+    ),
     help="Formats to save the output in. Can be used more than once. Pickle is "
-    "a little faster to load, but json is easier to read in a text editor.",
+    "a little faster to load, but json is easier to read in a text editor. The "
+    "various pickle items control what pickle protocol is used to save.",
 )
 @click.option(
     "--clean/--no-clean",

@@ -54,7 +54,7 @@ class Connection(object):
 
     def download_entity_type(self, entity_type, query, limit, max_pages, formats=None):
         if formats is None:
-            formats = ["pickle"]
+            formats = ["pickle-high"]
 
         display_name = self.schema_entity[entity_type]["name"]["value"]
         logger.info("Processing: {} ({})".format(entity_type, display_name))
@@ -130,12 +130,13 @@ class Connection(object):
 
                 # Save this page data to disk
                 for fmt in formats:
+                    fmt, protocol = self.parse_format(fmt)
                     filename = data_dir / f"{filestem}.{fmt}"
                     if fmt == "json":
                         self.save_json(out, filename)
                     else:
                         with filename.open("wb") as fle:
-                            pickle.dump(out, fle)
+                            pickle.dump(out, fle, protocol=protocol)
 
                     # Check that the data we saved matches the input data
                     if self.strict:
@@ -228,6 +229,22 @@ class Connection(object):
                 ret[str(sgid)] = row
             return ret
         return {str(row[key]): row for row in data}
+
+    @classmethod
+    def parse_format(cls, fmt):
+        """Parse a format string into the base format and any protocol/version
+        identifier.
+
+        Accepts `pickle-high`, `pickle-default`, `pickle-X` for each supported
+        protocol version, and `json` formats.
+        """
+        if fmt == "pickle-high":
+            return "pickle", pickle.HIGHEST_PROTOCOL
+        elif fmt == "pickle-default":
+            return "pickle", pickle.DEFAULT_PROTOCOL
+        elif fmt.startswith("pickle-"):
+            return "pickle", int(fmt.replace("pickle-", ""))
+        return fmt, None
 
     @property
     def sg(self):
