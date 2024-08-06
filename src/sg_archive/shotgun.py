@@ -1,5 +1,6 @@
 import json
 import logging
+import pickle
 from pathlib import Path
 
 from shotgun_api3.lib import mockgun
@@ -33,13 +34,16 @@ class Shotgun(mockgun.Shotgun):
         # TODO: Use the config to ignore fields
         return self._schema[entity_type].keys()
 
-    def load_entity_type(self, entity_type):
+    def load_entity_type(self, entity_type, ext="pickle"):
         """Load all entity_type data for a specific entity_type archived in data_root."""
         logger.info(f"Loading entity_type: {entity_type}")
 
         entity_type_root = self.data_root / "data" / entity_type
-        for fn in entity_type_root.glob(f"{entity_type}_*.json"):
-            data = json.load(fn.open(), cls=DateTimeDecoder)
+        for fn in entity_type_root.glob(f"{entity_type}_*.{ext}"):
+            if ext == "pickle":
+                data = pickle.load(fn.open("rb"))
+            else:
+                data = json.load(fn.open(), cls=DateTimeDecoder)
             modified = {}
             for k, v in data.items():
                 # Add mockgun required field
@@ -58,9 +62,9 @@ class Shotgun(mockgun.Shotgun):
 
             self._db[entity_type].update(modified)
 
-    def load_entity_types(self):
+    def load_entity_types(self, ext="pickle"):
         """Load entity_type data for all archived entity_types found in from data_root."""
         for directory in (self.data_root / "data").iterdir():
             if not directory.is_dir():
                 continue
-            self.load_entity_type(directory.name)
+            self.load_entity_type(directory.name, ext=ext)

@@ -4,6 +4,7 @@ import json
 import logging
 import math
 import os
+import pickle
 import shutil
 import sys
 import time
@@ -47,10 +48,14 @@ class Connection(object):
         self.limit_download_count = 500
 
     def clean(self):
-        logger.info('Clean: Removing "{}" and its contents'.format(self.output))
-        shutil.rmtree(str(self.output))
+        if self.output.exists():
+            logger.info('Clean: Removing "{}" and its contents'.format(self.output))
+            shutil.rmtree(str(self.output))
 
-    def download_entity_type(self, entity_type, query, limit, max_pages):
+    def download_entity_type(self, entity_type, query, limit, max_pages, formats=None):
+        if formats is None:
+            formats = ["pickle"]
+
         display_name = self.schema_entity[entity_type]["name"]["value"]
         logger.info("Processing: {} ({})".format(entity_type, display_name))
         data_dir = self.output / "data" / entity_type
@@ -101,7 +106,7 @@ class Connection(object):
                     concurrent.futures.wait(self.pending_downloads)
                     self.pending_downloads = []
 
-                filename = data_dir / "{}_{}.json".format(entity_type, page)
+                filestem = f"{entity_type}_{page}"
 
                 sel_start = time.time()
                 out = self.find(entity_type, query, limit=limit, page=page)
@@ -121,18 +126,24 @@ class Connection(object):
 
                 # Update the file_map data for this select
                 out = self.make_index(out)
-                file_map.update({sgid: filename.name for sgid in out})
+                file_map.update({sgid: filestem for sgid in out})
 
                 # Save this page data to disk
-                self.save_json(out, filename)
+                for fmt in formats:
+                    filename = data_dir / f"{filestem}.{fmt}"
+                    if fmt == "json":
+                        self.save_json(out, filename)
+                    else:
+                        with filename.open("wb") as fle:
+                            pickle.dump(out, fle)
 
-                # Check that the data we saved matches the input data
-                if self.strict:
-                    with filename.open() as fle:
-                        check = json.load(fle, cls=DateTimeDecoder)
-                    if out != check:
-                        msg = [pformat(out), "-" * 50, pformat(check)]
-                        assert out == check, "\n".join(msg)
+                    # Check that the data we saved matches the input data
+                    if self.strict:
+                        with filename.open() as fle:
+                            check = json.load(fle, cls=DateTimeDecoder)
+                        if out != check:
+                            msg = [pformat(out), "-" * 50, pformat(check)]
+                            assert out == check, "\n".join(msg)
 
             total_end = time.time()
             logger.info(

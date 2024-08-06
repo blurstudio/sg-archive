@@ -116,12 +116,22 @@ def list_click(ctx):
     "still results left to download. Page size is controlled by `--limit`.",
 )
 @click.option(
+    "-f",
+    "--format",
+    "formats",
+    default=["pickle"],
+    multiple=True,
+    type=click.Choice(["pickle", "json"]),
+    help="Formats to save the output in. Can be used more than once. Pickle is "
+    "a little faster to load, but json is easier to read in a text editor.",
+)
+@click.option(
     "--clean/--no-clean",
     default=False,
     help="Clean the output before processing any other commands.",
 )
 @click.pass_context
-def archive(ctx, schema, entity_types, limit, max_pages, clean):
+def archive(ctx, schema, entity_types, limit, max_pages, formats, clean):
     conn = ctx.obj["conn"]
 
     if clean:
@@ -143,7 +153,7 @@ def archive(ctx, schema, entity_types, limit, max_pages, clean):
     click.echo("Processing Entity Types:")
     for entity_type in entity_types:
         query = conn.config.get("filters", {}).get(entity_type, [])
-        conn.download_entity_type(entity_type, query, limit, max_pages)
+        conn.download_entity_type(entity_type, query, limit, max_pages, formats=formats)
 
     click.echo("")
     click.echo("Finished archiving entity types.")
