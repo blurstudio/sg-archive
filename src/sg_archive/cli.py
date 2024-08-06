@@ -32,9 +32,10 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
     "the original value.",
 )
 @click.option(
-    "--download/--no-download",
-    default=True,
-    help="Download attachments when downloading entities.",
+    "--download",
+    type=click.Choice(["all", "missing", "no"]),
+    default="missing",
+    help="Controls how attachments are downloaded when downloading entities.",
 )
 @click.option(
     "-v",
@@ -63,6 +64,8 @@ def main(ctx, config, output, strict, download, verbosity):
     ctx.obj["conn"] = conn
     # Check the connection to SG
     conn.sg
+
+    click.echo(f"Downloading mode: {download}")
 
 
 @main.command(name="list")
@@ -102,7 +105,7 @@ def list_click(ctx):
     help="Archive these entitity types. Can be used multiple times. If 'all' is "
     "passed all non-ignored entity types are archived. If 'missing' is passed "
     "then it will archive all non-ignored entity types but will skip any that "
-    "already have their entity_type folder created in output.",
+    "already have their '_page_index.json' created in output.",
 )
 @click.option(
     "--limit",
@@ -152,7 +155,7 @@ def archive(ctx, schema, entity_types, limit, max_pages, formats, clean):
         entity_types = [
             entity_type
             for entity_type in conn.schema_entity
-            if not (conn.output / "data" / entity_type).exists()
+            if not (conn.output / "data" / entity_type / "_page_index.json").exists()
         ]
 
     click.echo("")
@@ -163,6 +166,8 @@ def archive(ctx, schema, entity_types, limit, max_pages, formats, clean):
 
     click.echo("")
     click.echo("Finished archiving entity types.")
+    if conn.all_download:
+        click.echo(f"  Downloaded {conn.all_download} files for all entity types.")
 
 
 if __name__ == "__main__":

@@ -25,7 +25,13 @@ logger = logging.getLogger(__name__)
 
 class Connection(object):
     def __init__(
-        self, config, output, download=True, filtered=True, strict=False, verbosity=0
+        self,
+        config,
+        output,
+        download="missing",
+        filtered=True,
+        strict=False,
+        verbosity=0,
     ):
         self.config = yaml.load(config.open(), Loader=yaml.Loader)
         if "connection" in self.config:
@@ -41,6 +47,8 @@ class Connection(object):
         self.verbosity = verbosity
 
         # File download processing variables
+        self.total_download = 0
+        self.all_download = 0
         self.pending_downloads = []
         self.executor = None
         # Wait for all pending downloads if more than X are pending before
@@ -90,8 +98,8 @@ class Connection(object):
             )
         )
         total = 0
-        total_download = 0
         file_map = {}
+        self.total_download = 0
 
         total_start = time.time()
         with concurrent.futures.ThreadPoolExecutor() as self.executor:
@@ -117,12 +125,9 @@ class Connection(object):
                 msg = "  Selected {} {} in {:.5} seconds."
                 logger.info(msg.format(len(out), entity_type, sel_end - sel_start))
 
-                if self.download:
-                    for entity in out:
-                        for field in urls:
-                            dl = self.download_url(entity, field, data_dir)
-                            if dl is not None:
-                                total_download += 1
+                for entity in out:
+                    for field in urls:
+                        self.download_url(entity, field, data_dir)
 
                 # Update the file_map data for this select
                 out = self.make_index(out)
@@ -154,10 +159,8 @@ class Connection(object):
         total_end = time.time()
 
         logger.info(
-            "  {} Records saved: {}, Total in SG: {}, Files "
-            "downloaded: {} in {:.5} seconds".format(
-                entity_type, total, count, total_download, total_end - total_start
-            )
+            f"  {entity_type} Records saved: {total}, Total in SG: {count}, Files "
+            f"downloaded: {self.total_download} in {total_end - total_start:.5} seconds."
         )
 
         # Save a map of which paged file contains the data for a given sgid.
@@ -193,12 +196,22 @@ class Connection(object):
         if self.verbosity:
             logger.info("    Downloading: {}".format(dest_fn.name))
         dest_fn.parent.mkdir(exist_ok=True, parents=True)
-        # Safety check for duplicate local file paths
-        if dest_fn.exists():
-            raise RuntimeError(
-                "Destination already exists: {}".format(dest_fn),
-            )
-        self.pending_downloads.append(self.executor.submit(worker, url, dest_fn))
+
+        # Process the download mode for the file. This is called even if downloading
+        # is disabled so the database is updated with the local file paths.
+        if self.download == "missing":
+            download = not dest_fn.exists()
+        else:
+            download = self.download == "all"
+        if download:
+            # Safety check for duplicate local file paths
+            if dest_fn.exists():
+                raise RuntimeError(
+                    "Destination already exists: {}".format(dest_fn),
+                )
+            self.pending_downloads.append(self.executor.submit(worker, url, dest_fn))
+            self.total_download += 1
+            self.all_download += 1
 
         # Store the relative file path to the file we just downloaded in the
         # data we will save into the json data
