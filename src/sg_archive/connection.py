@@ -93,9 +93,7 @@ class Connection(object):
             page_count = max_pages
 
         logger.info(
-            "  Total records: {}, limit: {}, total pages: {}".format(
-                count, limit, page_count
-            )
+            f"  Total records: {count}, limit: {limit}, total pages: {page_count}"
         )
         total = 0
         file_map = {}
@@ -122,8 +120,10 @@ class Connection(object):
                 total += len(out)
                 if not out:
                     break
-                msg = "  Selected {} {} in {:.5} seconds."
-                logger.info(msg.format(len(out), entity_type, sel_end - sel_start))
+                logger.info(
+                    f"  Selected {len(out)} {entity_type} in "
+                    f"{sel_end - sel_start:.5} seconds. ({page}/{page_count})"
+                )
 
                 for entity in out:
                     for field in urls:
@@ -145,8 +145,10 @@ class Connection(object):
 
                     # Check that the data we saved matches the input data
                     if self.strict:
-                        with filename.open() as fle:
-                            check = json.load(fle, cls=DateTimeDecoder)
+                        if fmt == "pickle":
+                            check = pickle.load(filename.open("rb"))
+                        else:
+                            check = json.load(filename.open(), cls=DateTimeDecoder)
                         if out != check:
                             msg = [pformat(out), "-" * 50, pformat(check)]
                             assert out == check, "\n".join(msg)

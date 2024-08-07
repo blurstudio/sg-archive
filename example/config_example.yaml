@@ -17,7 +17,7 @@ ignored:
   # care of downloading them.
   # `EventLogEntry` likely won't make sense to archive as its a very verbose
   # record of all changes made to most other tables over the last 6 months.
-  entities:
+  entity_types:
     - Attachment
     - EventLogEntry
     - WorkDayRule
