@@ -102,10 +102,18 @@ def list_click(ctx):
     "--entity-type",
     "entity_types",
     multiple=True,
-    help="Archive these entitity types. Can be used multiple times. If 'all' is "
+    help="Archive these entity types. Can be used multiple times. If 'all' is "
     "passed all non-ignored entity types are archived. If 'missing' is passed "
     "then it will archive all non-ignored entity types but will skip any that "
     "already have their '_page_index.json' created in output.",
+)
+@click.option(
+    "-x",
+    "--exclude-entity-type",
+    "excluded_entity_types",
+    multiple=True,
+    help="Skip these entitity_types when passing `all` or `missing` to "
+    "--entity-type. Can be used multiple times.",
 )
 @click.option(
     "--limit",
@@ -140,7 +148,9 @@ def list_click(ctx):
     help="Clean the output before processing any other commands.",
 )
 @click.pass_context
-def archive(ctx, schema, entity_types, limit, max_pages, formats, clean):
+def archive(
+    ctx, schema, entity_types, excluded_entity_types, limit, max_pages, formats, clean
+):
     conn = ctx.obj["conn"]
 
     if clean:
@@ -149,14 +159,19 @@ def archive(ctx, schema, entity_types, limit, max_pages, formats, clean):
     if schema:
         conn.save_schema()
 
+    exclude = False
     if "all" in entity_types:
+        exclude = True
         entity_types = conn.schema_entity.keys()
     elif "missing" in entity_types:
+        exclude = True
         entity_types = [
             entity_type
             for entity_type in conn.schema_entity
             if not (conn.output / "data" / entity_type / "_page_index.json").exists()
         ]
+    if exclude:
+        entity_types = [et for et in entity_types if et not in excluded_entity_types]
 
     click.echo("")
     click.echo("Processing Entity Types:")
