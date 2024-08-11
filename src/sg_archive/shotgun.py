@@ -55,6 +55,11 @@ class Shotgun(mockgun.Shotgun):
                         local_path = fn.parent / field["local_path"]
                         if field["__download_type"] == "image":
                             v[field_name] = local_path.as_uri()
+                        elif field["__download_type"] == "attachment":
+                            local_path = (
+                                fn.parent.parent / "Attachment" / field["local_path"]
+                            )
+                            v[field_name]["url"] = local_path.as_uri()
                         elif field["__download_type"] == "url":
                             v[field_name]["url"] = local_path.as_uri()
 

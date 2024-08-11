@@ -7,9 +7,10 @@ import os
 import pickle
 import shutil
 import sys
-import time
+import threading
 import urllib.parse
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 from pprint import pformat
 
@@ -51,9 +52,175 @@ class Connection(object):
         self.all_download = 0
         self.pending_downloads = []
         self.executor = None
+        self._field_data_types = {}
+        self.attachment_dir = self.output / "data" / "Attachment"
+        self.attachment_urls = {}
+        self.attachment_all_ids = set()
+        self.write_lock = threading.Lock()
         # Wait for all pending downloads if more than X are pending before
         # processing another page of results.
         self.limit_download_count = 500
+
+    def field_data_types(self, entity_type):
+        """Returns a dict of useful mappings of field names matching useful
+        data types.
+        """
+        try:
+            return self._field_data_types[entity_type]
+        except KeyError:
+            pass
+
+        if entity_type not in self._field_data_types:
+            self._field_data_types[entity_type] = {"image": [], "attachment": []}
+        field_type = self._field_data_types[entity_type]
+        for name, field in self.schema[entity_type].items():
+            data_type = field["data_type"]["value"]
+            if data_type == "image":
+                field_type["image"].append(name)
+            elif data_type == "url":
+                field_type["attachment"].append(name)
+            elif data_type in ("entity", "multi_entity"):
+                valid_types = field["properties"]["valid_types"]["value"]
+                if "Attachment" in valid_types:
+                    field_type["attachment"].append(name)
+        return self._field_data_types[entity_type]
+
+    def attachments_get(self, ids, fields=None):
+        """Get attachments entities."""
+        if not ids:
+            return []
+
+        if fields is None:
+            fields = [
+                "url",
+                "name",
+                "content_type",
+                "link_type",
+                "type",
+                "id",
+                "this_file",
+            ]
+        sel_start = datetime.now()
+        ret = self.sg.find("Attachment", [["id", "in", list(ids)]], fields)
+        sel_end = datetime.now()
+        logger.info(
+            f"  Selected {len(ret)} linked attachments for {len(ids)} ids took "
+            f"{self.timestr(sel_end - sel_start)}."
+        )
+        return ret
+
+    def attachment_ids(self, entities):
+        """Returns a set of all Attachment id's linked to any column on entities."""
+        attachment_ids = set()
+        for entity in entities:
+            for field in self.field_data_types(entity["type"])["attachment"]:
+                data = entity.get(field)
+                if not data:
+                    continue
+                if not isinstance(data, list):
+                    data = [data]
+                for item in data:
+                    if isinstance(item, str):
+                        # Project landing_page_url is a url but returns a string
+                        continue
+                    sgid = item.get("id")
+                    if sgid:
+                        attachment_ids.add(sgid)
+                        self.attachment_all_ids.add(sgid)
+        return attachment_ids
+
+    def attachments_localize(self, attachments):
+        """Build a drop in replacement attachment dictionary for url fields.
+
+        Replicates the dict structure of an attachment link. Replaces the url
+        with a relative local file path. Adds `__download_type` key set to
+        attachment.
+
+        https://developers.shotgridsoftware.com/python-api/cookbook/attachments.html#structure-of-local-file-values
+
+        Returns:
+            dict: A dict of localized attachments using their id as the key.
+        """
+        ret = {}
+        for source in attachments:
+            attachment = source["this_file"].copy()
+            name = attachment["name"]
+            name = name.replace("\\", "_").replace("/", "_")
+            name = "{}-{}".format(attachment["id"], name)
+            dest = Path("files") / "this_file" / name
+            attachment["name"] = name
+            attachment["__download_type"] = "attachment"
+            attachment["local_path"] = str(dest)
+            # Store the original attachment url so we can download it later.
+            self.attachment_urls[attachment["id"]] = attachment["url"]
+            # Then replace it with the local path
+            attachment["url"] = str(dest)
+
+            ret[attachment["id"]] = attachment
+
+        return ret
+
+    def download_attachment(self, attachment):
+        fields = self.field_data_types("Attachment")
+        # Don't download ignored fields
+        ignored_fields = self.config.get("omitted_attachment_fields", {}).get(
+            "Attachment", []
+        )
+
+        for field in fields["image"] + fields["attachment"]:
+            if field in ignored_fields:
+                continue
+            dest_fn = self.attachment_dir / "files" / field / attachment["name"]
+            url = self.attachment_urls[attachment["id"]]
+            self._download(url, dest_fn)
+
+    def attachment_localize_entities(self, entities, attachment_cache):
+        """Updates entities, replacing any attachment fields with the localized
+        attachment data."""
+        for entity in entities:
+            for field in self.field_data_types(entity["type"])["attachment"]:
+                data = entity.get(field)
+                if not data:
+                    continue
+                # Replace attachment links with the localized version
+                if isinstance(data, list):
+                    attachments = [
+                        attachment_cache[i["id"]] if i["type"] == "Attachment" else i
+                        for i in data
+                    ]
+                    entity[field] = attachments
+                else:
+                    if data["type"] != "Attachment":
+                        continue
+                    entity[field] = attachment_cache[data["id"]]
+                    attachments = [entity[field]]
+
+                for attachment in attachments:
+                    self.download_attachment(attachment)
+
+    def process_all_recorded_attachments(self):
+        filename = self.attachment_dir / "_all_ids.pickle"
+        with self.write_lock:
+            if filename.exists():
+                with filename.open("rb") as fle:
+                    existing = pickle.load(fle)
+            else:
+                existing = set()
+
+            existing.update(self.attachment_all_ids)
+
+            filename.parent.mkdir(exist_ok=True, parents=True)
+            with filename.open("wb") as fle:
+                pickle.dump(existing, fle)
+        return existing
+
+    def process_attachments(self, entities):
+        """Select and localize attachments"""
+        attachment_ids = self.attachment_ids(entities)
+        attachments = self.attachments_get(attachment_ids)
+        cache = self.attachments_localize(attachments)
+        self.attachment_localize_entities(entities, cache)
+        return cache
 
     def clean(self):
         if self.output.exists():
@@ -72,11 +239,6 @@ class Connection(object):
         # Save the schema for just this entity_type so its easier to inspect
         entity_type_schema = data_dir / "_schema.json"
         self.save_json(self.schema[entity_type], entity_type_schema)
-        urls = [
-            k
-            for k, v in self.schema[entity_type].items()
-            if v["data_type"]["value"] in ("url", "image")
-        ]
 
         count = self.sg.summarize(
             entity_type,
@@ -99,7 +261,7 @@ class Connection(object):
         file_map = {}
         self.total_download = 0
 
-        total_start = time.time()
+        total_start = datetime.now()
         with concurrent.futures.ThreadPoolExecutor() as self.executor:
             for page in range(1, page_count + 1):
                 # Process pending downloads before the links expire.
@@ -109,24 +271,30 @@ class Connection(object):
                         f"    Waiting for {pending_count} pending downloads to "
                         "ensure the download links don't expire."
                     )
+                    logger.info(
+                        "    Progress: "
+                        + self.estimate_time(page - 1, page_count, total_start)
+                    )
                     concurrent.futures.wait(self.pending_downloads)
                     self.pending_downloads = []
 
                 filestem = f"{entity_type}_{page}"
 
-                sel_start = time.time()
+                sel_start = datetime.now()
                 out = self.find(entity_type, query, limit=limit, page=page)
-                sel_end = time.time()
+                sel_end = datetime.now()
                 total += len(out)
                 if not out:
                     break
+                est = self.estimate_time(page - 1, page_count, total_start)
                 logger.info(
                     f"  Selected {len(out)} {entity_type} in "
-                    f"{sel_end - sel_start:.5} seconds. ({page}/{page_count})"
+                    f"{self.timestr(sel_end - sel_start)}:  {est}"
                 )
+                self.process_attachments(out)
 
                 for entity in out:
-                    for field in urls:
+                    for field in self.field_data_types(entity_type)["image"]:
                         self.download_url(entity, field, data_dir)
 
                 # Update the file_map data for this select
@@ -153,27 +321,26 @@ class Connection(object):
                             msg = [pformat(out), "-" * 50, pformat(check)]
                             assert out == check, "\n".join(msg)
 
-            total_end = time.time()
-            logger.info(
-                f"    Finished selecting pages in {total_end - total_start:.5} "
-                f"seconds. Waiting for {len(self.pending_downloads)} remaining downloads."
-            )
-        total_end = time.time()
+            # Save the attachment Id's that we processed in this loop
+            self.process_all_recorded_attachments()
 
+            total_end = datetime.now()
+            logger.info(
+                "    Finished selecting pages took "
+                f"{self.timestr(total_end - total_start)}. Waiting "
+                f"for {len(self.pending_downloads)} remaining downloads."
+            )
+
+        total_end = datetime.now()
         logger.info(
             f"  {entity_type} Records saved: {total}, Total in SG: {count}, Files "
-            f"downloaded: {self.total_download} in {total_end - total_start:.5} seconds."
+            f"downloaded: {self.total_download} took {self.timestr(total_end - total_start)}."
         )
 
         # Save a map of which paged file contains the data for a given sgid.
         self.save_json(file_map, data_dir / "_page_index.json")
 
     def download_url(self, entity, field, dest):
-        def worker(url, dest_name):
-            urllib.request.urlretrieve(url, str(dest_name))
-            if self.verbosity:
-                logger.info(f"    Download Finished: {dest_name.name}")
-
         url_info = entity[field]
         if url_info is None:
             return None
@@ -195,31 +362,67 @@ class Connection(object):
             name = name.replace("\\", "_").replace("/", "_")
             name = "{}-{}".format(entity["id"], name)
         dest_fn = dest / "files" / field / name
-        if self.verbosity:
-            logger.info("    Downloading: {}".format(dest_fn.name))
-        dest_fn.parent.mkdir(exist_ok=True, parents=True)
 
         # Process the download mode for the file. This is called even if downloading
         # is disabled so the database is updated with the local file paths.
-        if self.download == "missing":
-            download = not dest_fn.exists()
-        else:
-            download = self.download == "all"
-        if download:
-            # Safety check for duplicate local file paths
-            if dest_fn.exists():
-                raise RuntimeError(
-                    "Destination already exists: {}".format(dest_fn),
-                )
-            self.pending_downloads.append(self.executor.submit(worker, url, dest_fn))
-            self.total_download += 1
-            self.all_download += 1
+        self._download(url, dest_fn)
 
         # Store the relative file path to the file we just downloaded in the
         # data we will save into the json data
         url_info["local_path"] = str(dest_fn.relative_to(dest))
 
         return dest_fn
+
+    def _download(self, url, dest_fn):
+        if self.verbosity:
+            logger.info("    Downloading: {}".format(dest_fn.name))
+
+        if self.download == "missing":
+            download = not dest_fn.exists()
+        else:
+            download = self.download == "all"
+        if not download:
+            return False
+
+        # Create the parent directory if it doesn't exist
+        dest_fn.parent.mkdir(exist_ok=True, parents=True)
+
+        if dest_fn.exists():
+            return False
+            # raise RuntimeError(
+            #     "Destination already exists: {}".format(dest_fn),
+            # )
+        self.pending_downloads.append(
+            self.executor.submit(self._download_worker, url, dest_fn)
+        )
+        self.total_download += 1
+        self.all_download += 1
+        return True
+
+    def _download_worker(self, url, dest_name):
+        try:
+            urllib.request.urlretrieve(url, str(dest_name))
+        except Exception as error:
+            logger.warning(f"Download Failed: {error}")
+            raise
+        if self.verbosity:
+            logger.info(f"    Download Finished: {dest_name.name}")
+
+    @classmethod
+    def estimate_time(cls, current_page, total_pages, start_time):
+        """Return a string indicating progress remaining."""
+        current_time = datetime.now()
+        time_elapsed = current_time - start_time
+        time_per_page = time_elapsed / max(current_page, 1)
+        total = time_per_page * total_pages
+        remaining = (total_pages - current_page) * time_per_page
+
+        ret = (
+            f"{current_page / total_pages * 100:.2f}%({current_page}/{total_pages}) "
+            f"Elapsed: {cls.timestr(time_elapsed)}, Est. Remain: {cls.timestr(remaining)}, "
+            f"Est. Total: {cls.timestr(total)}"
+        )
+        return ret
 
     def find(self, entity_type, query, **kwargs):
         if "fields" not in kwargs:
@@ -287,6 +490,11 @@ class Connection(object):
             if self.filtered:
                 self._schema = self.filter_schema(self._schema)
         return self._schema
+
+    @classmethod
+    def timestr(cls, delta):
+        """Returns a timedelta string with ms removed."""
+        return str(delta).split(".")[0]
 
     def filter_schema(self, schema):
         ignored = self.config.get("ignored", {})
