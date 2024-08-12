@@ -48,8 +48,7 @@ class Connection(object):
         self.verbosity = verbosity
 
         # File download processing variables
-        self.total_download = 0
-        self.all_download = 0
+        self.downloads = {"current": 0, "skipped": [], "all": 0, "failed": []}
         self.pending_downloads = []
         self.executor = None
         self._field_data_types = {}
@@ -160,23 +159,15 @@ class Connection(object):
 
         return ret
 
-    def download_attachment(self, attachment):
-        fields = self.field_data_types("Attachment")
-        # Don't download ignored fields
-        ignored_fields = self.config.get("omitted_attachment_fields", {}).get(
-            "Attachment", []
-        )
-
-        for field in fields["image"] + fields["attachment"]:
-            if field in ignored_fields:
-                continue
-            dest_fn = self.attachment_dir / "files" / field / attachment["name"]
-            url = self.attachment_urls[attachment["id"]]
-            self._download(url, dest_fn)
+    def download_attachment(self, attachment, field="this_file"):
+        dest_fn = self.attachment_dir / "files" / field / attachment["name"]
+        url = self.attachment_urls[attachment["id"]]
+        self._download(url, dest_fn)
 
     def attachment_localize_entities(self, entities, attachment_cache):
         """Updates entities, replacing any attachment fields with the localized
         attachment data."""
+        ignored = self.config.get("ignored", {}).get("file_exts", {})
         for entity in entities:
             for field in self.field_data_types(entity["type"])["attachment"]:
                 data = entity.get(field)
@@ -196,6 +187,12 @@ class Connection(object):
                     attachments = [entity[field]]
 
                 for attachment in attachments:
+                    path = Path(attachment["local_path"])
+                    if path.suffix in ignored.get(entity["type"], {}).get(field, []):
+                        self.downloads["skipped"].append(attachment)
+                        if self.verbosity:
+                            logger.debug(f"Not-downloading: {path}")
+                        continue
                     self.download_attachment(attachment)
 
     def process_all_recorded_attachments(self):
@@ -259,7 +256,7 @@ class Connection(object):
         )
         total = 0
         file_map = {}
-        self.total_download = 0
+        self.downloads["current"] = 0
 
         total_start = datetime.now()
         with concurrent.futures.ThreadPoolExecutor() as self.executor:
@@ -334,7 +331,8 @@ class Connection(object):
         total_end = datetime.now()
         logger.info(
             f"  {entity_type} Records saved: {total}, Total in SG: {count}, Files "
-            f"downloaded: {self.total_download} took {self.timestr(total_end - total_start)}."
+            f"downloaded: {self.downloads['current']} "
+            f"took {self.timestr(total_end - total_start)}."
         )
 
         # Save a map of which paged file contains the data for a given sgid.
@@ -395,18 +393,19 @@ class Connection(object):
         self.pending_downloads.append(
             self.executor.submit(self._download_worker, url, dest_fn)
         )
-        self.total_download += 1
-        self.all_download += 1
+        self.downloads["current"] += 1
+        self.downloads["all"] += 1
         return True
 
-    def _download_worker(self, url, dest_name):
+    def _download_worker(self, url, dest):
         try:
-            urllib.request.urlretrieve(url, str(dest_name))
+            urllib.request.urlretrieve(url, str(dest))
         except Exception as error:
-            logger.warning(f"Download Failed: {error}")
+            self.downloads["failed"].append((url, dest, str(error)))
+            logger.warning(f"Download Failed: {dest}, ({error})")
             raise
         if self.verbosity:
-            logger.info(f"    Download Finished: {dest_name.name}")
+            logger.info(f"    Download Finished: {dest.name}")
 
     @classmethod
     def estimate_time(cls, current_page, total_pages, start_time):

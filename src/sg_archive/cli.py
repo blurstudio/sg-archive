@@ -1,5 +1,6 @@
 import logging
 import pickle
+from datetime import datetime
 from pathlib import Path
 
 import click
@@ -201,6 +202,7 @@ def archive(
 
     click.echo("")
     click.echo("Processing Entity Types:")
+    start = datetime.now()
     for entity_type in entity_types:
         query = conn.config.get("filters", {}).get(entity_type, [])
         if smart_attachments and entity_type == "Attachment":
@@ -209,11 +211,22 @@ def archive(
                 raise ValueError("No pre-recorded Attachment Id's found.")
             query = [["id", "in", list(ids)]]
         conn.download_entity_type(entity_type, query, limit, max_pages, formats=formats)
+    end = datetime.now()
 
     click.echo("")
-    click.echo("Finished archiving entity types.")
-    if conn.all_download:
-        click.echo(f"  Downloaded {conn.all_download} files for all entity types.")
+    click.echo(f"Finished archiving entity types in {conn.timestr(end - start)}.")
+    if conn.downloads["all"]:
+        click.echo(f"Downloaded {conn.downloads['all']} files.")
+    if conn.downloads["skipped"]:
+        click.echo(f"Skipped download of {len(conn.downloads['skipped'])} files.")
+        path = conn.output / "skipped_downloads.json"
+        conn.save_json(conn.downloads["skipped"], path)
+    if conn.downloads["failed"]:
+        click.echo(f"Failed Downloads: {len(conn.downloads['failed'])}")
+        for _, dest, error in conn.downloads["failed"][:25]:
+            click.echo(f"  {dest}: ({error})")
+        if len(conn.downloads["failed"]) > 50:
+            click.echo("  ...")
 
 
 if __name__ == "__main__":

@@ -24,9 +24,22 @@ ignored:
 
   # Don't show these fields when selecting a specific entity
   fields:
+    Attachment:
+      - filmstrip_image
+      - image
+      - image_source_entity
     Version:
       - viewed_by_current_user
       - viewed_by_current_user_at
+  # When processing attachments if these file extensions are encountered
+  # record them but don't actually download the files. This is useful for
+  # preventing downloading the source `sg_uploaded_movie` .mov file when
+  # the re-encoded .mp4 `sg_uploaded_movie_mp4` will suffice. It will however
+  # still download other file formats.
+  file_exts:
+    Version:
+      sg_uploaded_movie:
+        - .mov
 
 # Filters can be used to define shotgun_api3 filters for each entity.
 # https://developers.shotgridsoftware.com/python-api/reference.html#shotgun_api3.shotgun.Shotgun.find
