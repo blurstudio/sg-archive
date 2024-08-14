@@ -29,10 +29,13 @@ class Shotgun(mockgun.Shotgun):
         mockgun.Shotgun.set_schema_paths(schema_file, schema_entity_file)
         super(Shotgun, self).__init__(base_url, *args, **kwargs)
 
-    def field_names_for_entity_type(self, entity_type):
+    def field_names_for_entity_type(self, entity_type, as_list=True):
         """Provides a list of the field names for a given entity_type."""
         # TODO: Use the config to ignore fields
-        return self._schema[entity_type].keys()
+        ret = self._schema[entity_type].keys()
+        if as_list:
+            return list(ret)
+        return ret
 
     def load_entity_type(self, entity_type, ext="pickle"):
         """Load all entity_type data for a specific entity_type archived in data_root."""
@@ -51,10 +54,17 @@ class Shotgun(mockgun.Shotgun):
 
                 # Process file links to reference the local files
                 for field_name, field in v.items():
-                    if isinstance(field, dict) and "__download_type" in field:
+                    if not isinstance(field, dict):
+                        continue
+                    if field.get("type") == "Attachment":
+                        field = field["this_file"]
+                    elif "__download_type" not in field:
+                        continue
+                    if "__download_type" in field:
                         local_path = fn.parent / field["local_path"]
                         if field["__download_type"] == "image":
-                            v[field_name] = local_path.as_uri()
+                            v[field_name] = field["local_path"]
+                            # v[field_name] = local_path.as_uri()
                         elif field["__download_type"] == "attachment":
                             local_path = (
                                 fn.parent.parent / "Attachment" / field["local_path"]

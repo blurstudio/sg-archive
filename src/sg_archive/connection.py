@@ -34,6 +34,7 @@ class Connection(object):
         strict=False,
         verbosity=0,
     ):
+        config = Path(config)
         self.config = yaml.load(config.open(), Loader=yaml.Loader)
         if "connection" in self.config:
             self.connection = self.config.pop("connection")
@@ -98,6 +99,8 @@ class Connection(object):
                 "type",
                 "id",
                 "this_file",
+                "image",
+                "filmstrip_image",
             ]
         sel_start = datetime.now()
         ret = self.sg.find("Attachment", [["id", "in", list(ids)]], fields)
@@ -131,6 +134,8 @@ class Connection(object):
     def attachments_localize(self, attachments):
         """Build a drop in replacement attachment dictionary for url fields.
 
+        This function modifies the provided attachments in place.
+
         Replicates the dict structure of an attachment link. Replaces the url
         with a relative local file path. Adds `__download_type` key set to
         attachment.
@@ -141,25 +146,32 @@ class Connection(object):
             dict: A dict of localized attachments using their id as the key.
         """
         ret = {}
-        for source in attachments:
-            attachment = source["this_file"].copy()
-            name = attachment["name"]
-            name = name.replace("\\", "_").replace("/", "_")
-            name = "{}-{}".format(attachment["id"], name)
+        for attachment in attachments:
+            this_file = attachment["this_file"]
+            name = this_file["name"]
+            if name is None:
+                name = "no_name"
+            else:
+                name = name.replace("\\", "_").replace("/", "_")
+            name = "{}-{}".format(this_file["id"], name)
             dest = Path("files") / "this_file" / name
-            attachment["name"] = name
-            attachment["__download_type"] = "attachment"
-            attachment["local_path"] = str(dest)
+            this_file["name"] = name
+            this_file["__download_type"] = "attachment"
+            this_file["local_path"] = str(dest)
             # Store the original attachment url so we can download it later.
-            self.attachment_urls[attachment["id"]] = attachment["url"]
+            self.attachment_urls[this_file["id"]] = this_file["url"]
             # Then replace it with the local path
-            attachment["url"] = str(dest)
+            this_file["url"] = str(dest)
+
+            for field in self.field_data_types("Attachment")["image"]:
+                if field in attachment and attachment[field]:
+                    self.download_url(attachment, field, self.attachment_dir)
 
             ret[attachment["id"]] = attachment
 
         return ret
 
-    def download_attachment(self, attachment, field="this_file"):
+    def download_attachment_this_file(self, attachment, field="this_file"):
         dest_fn = self.attachment_dir / "files" / field / attachment["name"]
         url = self.attachment_urls[attachment["id"]]
         self._download(url, dest_fn)
@@ -187,13 +199,14 @@ class Connection(object):
                     attachments = [entity[field]]
 
                 for attachment in attachments:
-                    path = Path(attachment["local_path"])
+                    this_file = attachment["this_file"]
+                    path = Path(this_file["local_path"])
                     if path.suffix in ignored.get(entity["type"], {}).get(field, []):
-                        self.downloads["skipped"].append(attachment)
+                        self.downloads["skipped"].append(this_file)
                         if self.verbosity:
-                            logger.debug(f"Not-downloading: {path}")
+                            logger.debug(f"    Not-downloading: {path}")
                         continue
-                    self.download_attachment(attachment)
+                    self.download_attachment_this_file(this_file)
 
     def process_all_recorded_attachments(self):
         filename = self.attachment_dir / "_all_ids.pickle"
@@ -228,7 +241,11 @@ class Connection(object):
         if formats is None:
             formats = ["pickle-high"]
 
-        display_name = self.schema_entity[entity_type]["name"]["value"]
+        display_name = (
+            self.schema_entity.get(entity_type, {})
+            .get("name", {})
+            .get("value", entity_type)
+        )
         logger.info("Processing: {} ({})".format(entity_type, display_name))
         data_dir = self.output / "data" / entity_type
         data_dir.mkdir(exist_ok=True, parents=True)
@@ -372,9 +389,6 @@ class Connection(object):
         return dest_fn
 
     def _download(self, url, dest_fn):
-        if self.verbosity:
-            logger.info("    Downloading: {}".format(dest_fn.name))
-
         if self.download == "missing":
             download = not dest_fn.exists()
         else:
@@ -387,9 +401,10 @@ class Connection(object):
 
         if dest_fn.exists():
             return False
-            # raise RuntimeError(
-            #     "Destination already exists: {}".format(dest_fn),
-            # )
+
+        if self.verbosity:
+            logger.debug("    Downloading: {}".format(dest_fn.name))
+
         self.pending_downloads.append(
             self.executor.submit(self._download_worker, url, dest_fn)
         )
@@ -405,7 +420,7 @@ class Connection(object):
             logger.warning(f"Download Failed: {dest}, ({error})")
             raise
         if self.verbosity:
-            logger.info(f"    Download Finished: {dest.name}")
+            logger.info(f"      Download Finished: {dest.name}")
 
     @classmethod
     def estimate_time(cls, current_page, total_pages, start_time):
