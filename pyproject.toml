@@ -56,6 +56,10 @@ dev = [
     "tox",
     "build",
 ]
+server = [
+    "fastapi[standard]",
+    "Markdown",
+]
 
 [project.scripts]
 sg-archive = "sg_archive.cli:main"

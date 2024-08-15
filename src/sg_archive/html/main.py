@@ -31,14 +31,6 @@ app = FastAPI()
 
 # Initialize Jinja2Templates with your html template
 templates = Jinja2Templates(directory="templates")
-# templates.env.add_extension(MarkdownExtension)
-
-
-def list_fields(entity_type):
-    fields = html_cfg.get("list_fields", {}).get(entity_type)
-    if fields is None:
-        return sg.field_names_for_entity_type(entity_type)
-    return fields
 
 
 def load_entity_type(entity_type, force=False):
@@ -138,6 +130,33 @@ class Helper:
             return f"?{self.request.query_params}"
         return ""
 
+    def details_fields(self, entity_type, remove=None):
+        """Returns a list of fields to show for an entity_type in a details view."""
+        fields = sg.field_names_for_entity_type(entity_type)
+
+        if remove is None:
+            remove = []
+
+        # Exclude fields defined on in yaml for details view
+        exclude = html_cfg.get("exclude_details", {})
+        remove.extend(exclude.get("global", []))
+        remove.extend(exclude.get(entity_type, []))
+
+        fields = self.remove_fields(fields, remove)
+        return fields
+
+    def list_fields(self, entity_type):
+        fields = html_cfg.get("list_fields", {}).get(entity_type)
+        if fields is None:
+            return sg.field_names_for_entity_type(entity_type)
+        return fields
+
+    def remove_fields(self, fields, remove):
+        for field in remove:
+            if field in fields:
+                fields.remove(field)
+        return fields
+
     def sg_request_query(self, entity_type: str):
         """Build a SG query for the given request and entity_type."""
         query = []
@@ -147,8 +166,12 @@ class Helper:
 
         params = dict(self.request.query_params.items())
         if "project" in params:
-            value = int(params["project"])
-            query.append(["project", "is", {"type": "Project", "id": value}])
+            fields = sg.field_names_for_entity_type(entity_type)
+            if "project" in fields:
+                # This entity_type has a project field, limit the results to it
+                value = int(params["project"])
+                query.append(["project", "is", {"type": "Project", "id": value}])
+                load_entity_type("Project")
 
         return query
 
@@ -157,15 +180,27 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/data", StaticFiles(directory=sg.data_root / "data"), name="data")
 
 
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "schema_entity": filtered_schema_entity,
+            "helper": Helper(request),
+        },
+    )
+
+
 # Define the FastAPI route with a URL parameter
 @app.get("/details/{entity_type}/{key}", response_class=HTMLResponse)
 async def details_entity(request: Request, entity_type: str, key: int):
-    entity, fields = sg_find_one(entity_type, key)
+    entity, _ = sg_find_one(entity_type, key)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found")
     helper = Helper(request)
+
     remove = []
-    remove.extend(html_cfg.get("fields", {}).get(entity_type, []))
     name = entity.get("code")
     template = "entity.html"
     if entity_type == "Note":
@@ -185,9 +220,9 @@ async def details_entity(request: Request, entity_type: str, key: int):
         name = entity["name"]
     elif entity_type == "HumanUser":
         name = " ".join((entity["firstname"], entity["lastname"]))
-    for field in remove:
-        if field in fields:
-            fields.remove(field)
+
+    fields = helper.details_fields(entity_type, remove)
+
     fields = sorted(fields, key=lambda i: helper.field_name(entity_type, i))
     return templates.TemplateResponse(
         template,
@@ -206,7 +241,7 @@ async def list_entities(request: Request, entity_type: str):
     helper = Helper(request)
     query = helper.sg_request_query(entity_type)
     entities, fields = sg_find(entity_type, query=query)
-    show_fields = list_fields(entity_type)
+    show_fields = helper.list_fields(entity_type)
     return templates.TemplateResponse(
         "list_entities.html",
         {

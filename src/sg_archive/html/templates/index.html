@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/static/style.css">
+    <title>We have SG at home!</title>
+</head>
+<body>
+    {% include 'header.html' %}
+    <p>
+    This site contains a read only archive of a ShotGrid/Flow Production tracker site.
+    </p>
+    <a href="/list_entities/Project{{ helper.link_params() }}">Projects</a><br>
+    <a href="/entities{{ helper.link_params() }}">All Entities</a><br>
+</body>
+</html>

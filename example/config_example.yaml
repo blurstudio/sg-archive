@@ -41,6 +41,40 @@ ignored:
       sg_uploaded_movie:
         - .mov
 
+html:
+  exclude_details:
+    # Exclude these fields if encountered on any entity_type
+    global:
+      - cached_display_name
+    # Other keys are entity_types and only exclude fields for that type
+    Note:
+      - replies
+      - reply_content
+      - sg_downstream_dependency_estimate
+    Project:
+      - filmstrip_image
+      - image
+      - image_blur_hash
+      - image_source_entity
+  list_fields:
+    # Only show these fields in a list_entities view for each entity_type.
+    Project:
+      # - name
+      - sg_status
+      - archived
+      - id
+      - created_at
+      - created_by
+      - updated_at
+      - updated_by
+      - layout_project
+    Note:
+      - sg_status_list
+      - subject
+      - content
+      - client_approved
+      - client_note
+
 # Filters can be used to define shotgun_api3 filters for each entity.
 # https://developers.shotgridsoftware.com/python-api/reference.html#shotgun_api3.shotgun.Shotgun.find
 # These are stored per entity_type

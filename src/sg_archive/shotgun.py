@@ -39,7 +39,7 @@ class Shotgun(mockgun.Shotgun):
 
     def load_entity_type(self, entity_type, ext="pickle"):
         """Load all entity_type data for a specific entity_type archived in data_root."""
-        logger.info(f"Loading entity_type: {entity_type}")
+        logger.warning(f"Loading entity_type: {entity_type}")
 
         entity_type_root = self.data_root / "data" / entity_type
         for fn in entity_type_root.glob(f"{entity_type}_*.{ext}"):
@@ -76,6 +76,7 @@ class Shotgun(mockgun.Shotgun):
                 modified[int(k)] = v
 
             self._db[entity_type].update(modified)
+            logger.warning(f"Finished entity_type: {entity_type}")
 
     def load_entity_types(self, ext="pickle"):
         """Load entity_type data for all archived entity_types found in from data_root."""
