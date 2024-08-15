@@ -13,5 +13,32 @@
     </p>
     <a href="/list_entities/Project{{ helper.link_params() }}">Projects</a><br>
     <a href="/entities{{ helper.link_params() }}">All Entities</a><br>
+    <p>
+    You can filter list views by adding various parameters to the url.
+    This is following the format <code>?key1=value&key2=value2</code>.
+    This is added to the end of the page url.
+    <br>
+    For example: http://sitename/list_entities/Task?project=1234&sg_status_list=ip&sg_version_type=Camera This example would show the Tasks list page.
+    </p>
+    <ul>
+        <li><code>project=1234</code> filters to only entities for the project with the id 1234.</li>
+        <li><code>sg_status_list=ip</code> filters to only entities with their status set to the short code "ip".</li>
+        <li><code>sg_version_type=Camera</code> filters to only entities with their "Version Type" set to the text "Camera".</li>
+    </ul>
+
+    If the entity type you are looking at doesn't understand one of the parameters it is ignored. <code>sg_version_type</code> is for the Version entity type and is ignored when looking at tasks. Case is important. The key (<code>sg_status_list</code>) is the code name of a field not its display name. The code name is shown as a tooltip for the <div class="tooltip">column header<span class="tooltiptext">code_name</span></div> in the list views. Alternatively you can look at an details page, when looking at the details section it shows the "<b>nice name</b> - <span class="field_name">code_name</span>" for each field. Use the <span class="field_name">code_name</span>.
+    </p>
+
+    Some common filters:
+    <ul>
+        <li><code>project=1234</code> Filter by project if the entity type supports it.
+            <a href="/list_entities/Project{{ helper.link_params() }}">Use id field</a>
+        </li>
+        <li><code>sg_status_list=ip</code> The status column. Note that not all entity types use the same status's.
+            <a href="/list_entities/Status{{ helper.link_params() }}">Use Short Code field</a>
+        </li>
+    </ul>
+
+
 </body>
 </html>

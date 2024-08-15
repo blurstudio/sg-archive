@@ -9,15 +9,22 @@
 <body>
     {% include 'header.html' %}
     <h1>{{ entity["type"] }}: {{ name }}</h1>
-    {%- if "image" in entity and entity["image"] %}
+
+    {%- if entity.get("sg_uploaded_movie_mp4") %}
+    <video class="thumbnail" controls poster="/data/{{ entity['type'] }}/{{ entity['image'] }}">
+        <source src="/data/Attachment/{{ entity['sg_uploaded_movie_mp4']['this_file']['local_path'] }}">
+    </video>
+    {%- elif "image" in entity and entity["image"] %}
     <img class="thumbnail" src="/data/{{ entity['type'] }}/{{ entity['image'] }}">
     {%- endif %}
+
     {%- if "content" in entity %}
     <div class=markdown>
         {{ helper.fmt_sg_value(entity, "content")|safe }}
     </div>
     {%- endif %}
     {%- if entity["attachments"] %}
+
     <h2>Attachments</h2>
     {%- for attach in entity["attachments"] %}
     <div class="responsive">
@@ -31,6 +38,7 @@
     {%- endfor %}
     <div class="clearfix"></div>
     {%- endif %}
+
     <h2>Details</h2>
     <div class="field">
     {%- for field in fields %}

@@ -2,6 +2,7 @@
 
 import logging
 import os
+from pathlib import Path
 
 import markdown
 from fastapi import FastAPI, HTTPException, Request
@@ -100,6 +101,8 @@ class Helper:
         )
 
     def fmt_sg_value(self, entity, field):
+        if isinstance(entity, int):
+            return "No Value"
         if field not in entity:
             return "No Value"
         value = entity[field]
@@ -158,25 +161,29 @@ class Helper:
         return fields
 
     def sg_request_query(self, entity_type: str):
-        """Build a SG query for the given request and entity_type."""
+        """Build a SG query for the given request and entity_type.
+        Any params specified will be added to the query as `[key, "is", value]`
+        if key is a field for the given entity_type.
+        """
         query = []
-        if entity_type == "Project":
-            # We can't filter by project on project
-            return query
-
         params = dict(self.request.query_params.items())
-        if "project" in params:
-            fields = sg.field_names_for_entity_type(entity_type)
-            if "project" in fields:
-                # This entity_type has a project field, limit the results to it
-                value = int(params["project"])
+        fields = sg.field_names_for_entity_type(entity_type)
+        for key, value in params.items():
+            if key not in fields:
+                # If the entity doesn't have this field, ignore it in selection
+                continue
+            if key == "project":
+                value = int(value)
                 query.append(["project", "is", {"type": "Project", "id": value}])
                 load_entity_type("Project")
-
+            else:
+                query.append([key, "is", value])
         return query
 
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount(
+    "/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static"
+)
 app.mount("/data", StaticFiles(directory=sg.data_root / "data"), name="data")
 
 

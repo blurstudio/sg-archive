@@ -3,6 +3,8 @@
 A tool that lets you download SG entities and attachments to disk and provides
 a shotgun_api3 interface to interact with the archived data.
 
+It also has a rudimentary web interface for read only viewing the archived data.
+
 # Archive Use
 
 This package installs a `sg-archive` pip executable. Alternatively it also provides
@@ -90,3 +92,26 @@ webbrowser.open(ver["image"])
 # "url" field type stored as a dict of attachment information.
 webbrowser.open(ver["sg_uploaded_movie"]["url"])
 ```
+
+# Web server
+
+A quick and dirty web server has been setup to allow viewing of the archived sg data. It is not fast or memory efficient, but provides basic list and details pages for the archived data including showing the thumbnail for entity_types that support it and Version shows the `uploaded_movie_mp4` file.
+
+The site is called "We have SG at home" because it is not very powerful, memory efficient, or user friendly. The mockgun api doesn't support limit or page offsets so all entities are shown in the list views. See the home page for the simple filter api features. It's there so non-scripters can access the data somewhat easily.
+
+## Installation
+
+Use pip to install the optional `server` requirements.
+
+```bash
+pip install path/to/sg-archive[server]
+cd path/to/sg-archive/html
+```
+
+Set the configuration environment variables.
+- `SG_ARCHIVE_CFG`: Points to your `config_example.yml` file.
+- `SG_ARCHIVE_DATA`: Points to the output folder you archived your data to. This is the folder that has the `schema.pickle` and `schema_entity.pickle` files.
+
+Use `uvicorn.exe main:app` or `fastapi dev main.py` to start the server.
+
+The `html` section of the `config_example.yml` file shows how to remove fields from the details and list views. For large entities like Version, Note, Task, etc you likely will want to reduce the fields shown in the list view significantly to prevent the tab from running out of memory while loading the data.

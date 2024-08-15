@@ -11,9 +11,13 @@
     <h1>{{ entities|length }} {{ entity_type }}'s</h1>
     <table class="list_view">
         <tr class="header">
-            <th>{{ entity_type }} Name</th>
+            <th>Details</th>
             {%- for field in fields %}
-            <th>{{ helper.field_name(entity_type, field) }}</th>
+            <th>
+                <div class="tooltip">{{ helper.field_name(entity_type, field) }}
+                    <span class="tooltiptext">{{ field }}</span>
+                </div>
+            </th>
             {% endfor %}
         </tr>
         {%- for entity in entities %}
