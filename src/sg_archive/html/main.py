@@ -21,9 +21,10 @@ ARCHIVE_DATA = os.environ["SG_ARCHIVE_DATA"]
 sg = Shotgun(ARCHIVE_DATA)
 con = Connection(ARCHIVE_CFG, output=sg.data_root)
 html_cfg = con.config.get("html", {})
-for entity_type in html_cfg.get("load_entity_type", []):
-    logger.info(f"Loading Entity_type: {entity_type}")
-    sg.load_entity_type(entity_type)
+# Get the filtered sg schemas used in this site
+filtered_schema = con.filter_schema(sg.schema_read())
+filtered_schema_entity = con.filter_schema_entity(sg.schema_entity_read())
+loaded_entity_types = set()
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -33,26 +34,6 @@ templates = Jinja2Templates(directory="templates")
 # templates.env.add_extension(MarkdownExtension)
 
 
-def field_name(entity_type, field):
-    return (
-        sg.schema_read()
-        .get(entity_type, {})
-        .get(field, {})
-        .get("name", {})
-        .get("value", field)
-    )
-
-
-def field_data_type(entity_type, field):
-    return (
-        sg.schema_read()
-        .get(entity_type, {})
-        .get(field, {})
-        .get("data_type", {})
-        .get("value", field)
-    )
-
-
 def list_fields(entity_type):
     fields = html_cfg.get("list_fields", {}).get(entity_type)
     if fields is None:
@@ -60,14 +41,29 @@ def list_fields(entity_type):
     return fields
 
 
-def sg_find(entity_type, keys, fields=None):
+def load_entity_type(entity_type, force=False):
+    """Lazily load a given entity_type on first access"""
+    if not force and entity_type in loaded_entity_types:
+        return False
+    logger.warning(f"Loading Entity_type: {entity_type}")
+    sg.load_entity_type(entity_type)
+    loaded_entity_types.add(entity_type)
+
+
+def sg_find(entity_type, keys=None, query=None, fields=None):
     # Call out to sg api against your local files
     if fields is None:
         fields = sg.field_names_for_entity_type(entity_type)
+    if keys:
+        query = [["id", "in", keys]]
+    if query is None:
+        query = []
+
+    load_entity_type(entity_type)
     return (
         sg.find(
             entity_type,
-            [["id", "in", keys]],
+            query,
             sg.field_names_for_entity_type(entity_type),
         ),
         fields,
@@ -78,54 +74,87 @@ def sg_find_one(entity_type, key, fields=None):
     # Call out to sg api against your local files
     if fields is None:
         fields = sg.field_names_for_entity_type(entity_type)
+
+    load_entity_type(entity_type)
     return sg.find_one(entity_type, [["id", "in", int(key)]], fields), fields
 
 
-def fmt_dict(value):
-    if isinstance(value, dict) and "name" in value:
-        return value["name"]
-    return value
+class Helper:
+    def __init__(self, request: Request):
+        self.request = request
 
+    def entity_href(self, entity):
+        name = (
+            entity["name"] if "name" in entity else f"{entity['type']}({entity['id']})"
+        )
+        return "<a href=/details/{}/{}>{}</a>".format(
+            entity["type"], entity["id"], name
+        )
 
-def entity_href(entity):
-    name = entity["name"] if "name" in entity else f"{entity['type']}({entity['id']})"
-    return "<a href=/details/{}/{}>{}</a>".format(entity["type"], entity["id"], name)
+    def field_data_type(self, entity_type, field):
+        return (
+            filtered_schema.get(entity_type, {})
+            .get(field, {})
+            .get("data_type", {})
+            .get("value", field)
+        )
 
+    def field_name(self, entity_type, field):
+        return (
+            filtered_schema.get(entity_type, {})
+            .get(field, {})
+            .get("name", {})
+            .get("value", field)
+        )
 
-def fmt_sg_value(entity, field):
-    if field not in entity:
-        return "No Value"
-    value = entity[field]
-    data_type = field_data_type(entity["type"], field)
-    if value is None:
-        return "No Value"
-    if data_type == "text":
-        # Format text using markdown and convert newlines to br
-        return markdown.markdown(value, extensions=["nl2br"])
-    if data_type == "multi_entity":
-        ret = [entity_href(v) for v in value]
-        return ", ".join(ret)
-    if isinstance(value, dict) and "type" in value and "id" in value:
-        name = value["name"] if "name" in value else f"{value['type']}({value['id']})"
-        return "<a href=/details/{}/{}>{}</a>".format(value["type"], value["id"], name)
-    if isinstance(value, dict) and "name" in value:
-        return value["name"]
-    if isinstance(value, list):
-        return ", ".join([fmt_sg_value(v, "name") for v in value])
-    return value
+    def fmt_sg_value(self, entity, field):
+        if field not in entity:
+            return "No Value"
+        value = entity[field]
+        data_type = self.field_data_type(entity["type"], field)
+        if value is None:
+            return "No Value"
+        if data_type == "text":
+            # Format text using markdown and convert newlines to br
+            return markdown.markdown(value, extensions=["nl2br"])
+        if data_type == "multi_entity":
+            ret = [self.entity_href(v) for v in value]
+            return ", ".join(ret)
+        if isinstance(value, dict) and "type" in value and "id" in value:
+            name = (
+                value["name"] if "name" in value else f"{value['type']}({value['id']})"
+            )
+            return "<a href=/details/{}/{}>{}</a>".format(
+                value["type"], value["id"], name
+            )
+        if isinstance(value, dict) and "name" in value:
+            return value["name"]
+        if isinstance(value, list):
+            return ", ".join([self.fmt_sg_value(v, "name") for v in value])
+        return value
+
+    def link_params(self):
+        if self.request.query_params:
+            return f"?{self.request.query_params}"
+        return ""
+
+    def sg_request_query(self, entity_type: str):
+        """Build a SG query for the given request and entity_type."""
+        query = []
+        if entity_type == "Project":
+            # We can't filter by project on project
+            return query
+
+        params = dict(self.request.query_params.items())
+        if "project" in params:
+            value = int(params["project"])
+            query.append(["project", "is", {"type": "Project", "id": value}])
+
+        return query
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/data", StaticFiles(directory=sg.data_root / "data"), name="data")
-
-
-# Define the FastAPI route with a URL parameter
-@app.get("/process/{url_param}", response_class=HTMLResponse)
-async def process(request: Request, url_param: str):
-    html_blob, fields = sg_find("Version", url_param)
-    return templates.TemplateResponse(
-        "response.html", {"request": request, "response": html_blob}
-    )
 
 
 # Define the FastAPI route with a URL parameter
@@ -134,6 +163,7 @@ async def details_entity(request: Request, entity_type: str, key: int):
     entity, fields = sg_find_one(entity_type, key)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found")
+    helper = Helper(request)
     remove = []
     remove.extend(html_cfg.get("fields", {}).get(entity_type, []))
     name = entity.get("code")
@@ -158,36 +188,33 @@ async def details_entity(request: Request, entity_type: str, key: int):
     for field in remove:
         if field in fields:
             fields.remove(field)
-    fields = sorted(fields, key=lambda i: field_name(entity_type, i))
+    fields = sorted(fields, key=lambda i: helper.field_name(entity_type, i))
     return templates.TemplateResponse(
         template,
         {
             "request": request,
             "entity": entity,
             "fields": fields,
-            "field_name": field_name,
-            "fmt_sg_value": fmt_sg_value,
+            "helper": helper,
             "name": name,
         },
     )
 
 
-@app.get("/list_view/{entity_type}", response_class=HTMLResponse)
-async def schema(request: Request, entity_type: str):
-    fields = sg.field_names_for_entity_type(entity_type)
-    entities = sg.find(entity_type, [], fields)
+@app.get("/list_entities/{entity_type}", response_class=HTMLResponse)
+async def list_entities(request: Request, entity_type: str):
+    helper = Helper(request)
+    query = helper.sg_request_query(entity_type)
+    entities, fields = sg_find(entity_type, query=query)
     show_fields = list_fields(entity_type)
     return templates.TemplateResponse(
-        "list_view.html",
+        "list_entities.html",
         {
             "request": request,
             "entities": entities,
             "fields": show_fields,
-            # "link_field": link_field,
             "entity_type": entity_type,
-            "field_name": field_name,
-            "fmt_sg_value": fmt_sg_value,
-            "entity_href": entity_href,
+            "helper": helper,
         },
     )
 
@@ -198,10 +225,8 @@ async def entities(request: Request):
         "entities.html",
         {
             "request": request,
-            "schema_entity": con.schema_entity,
-            "field_name": field_name,
-            "fmt_sg_value": fmt_sg_value,
-            "entity_href": entity_href,
+            "schema_entity": filtered_schema_entity,
+            "helper": Helper(request),
         },
     )
 
@@ -214,4 +239,4 @@ async def details_raw(request: Request, entity_type: str, key: int):
 
 @app.get("/schema_entity/{entity_type}")
 async def schema_entity(request: Request, entity_type: str):
-    return sg.schema_read().get(entity_type, {})
+    return filtered_schema.get(entity_type, {})

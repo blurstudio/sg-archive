@@ -8,19 +8,19 @@
 </head>
 <body>
     {% include 'header.html' %}
-    <h1>{{ entity_type }}'s</h1>
+    <h1>{{ entities|length }} {{ entity_type }}'s</h1>
     <table class="list_view">
-        <tr>
+        <tr class="header">
             <th>{{ entity_type }} Name</th>
-        {%- for field in fields %}
-            <th>{{ field_name(entity_type, field) }}</th>
-        {% endfor %}
+            {%- for field in fields %}
+            <th>{{ helper.field_name(entity_type, field) }}</th>
+            {% endfor %}
         </tr>
         {%- for entity in entities %}
         <tr>
-            <td>{{ entity_href(entity)|safe }}</td>
+            <td>{{ helper.entity_href(entity)|safe }}</td>
             {%- for field in fields %}
-                <td>{{ fmt_sg_value(entity, field)|safe }}</td>
+                <td>{{ helper.fmt_sg_value(entity, field)|safe }}</td>
             {%- endfor %}
         </tr>
         {%- endfor %}

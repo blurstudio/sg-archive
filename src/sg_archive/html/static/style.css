@@ -14,7 +14,7 @@ h1 {
   text-align: center;
 }
 
-th {
+tr.header {
   position: -webkit-sticky;
   position: sticky;
   top: 0;

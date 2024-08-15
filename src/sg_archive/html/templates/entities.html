@@ -9,7 +9,7 @@
 <body>
     {% include 'header.html' %}
     {%- for entity_type in schema_entity %}
-    <a href="/list_view/{{ entity_type }}">{{ schema_entity[entity_type]["name"]["value"] }}</a><br>
+    <a href="/list_entities/{{ entity_type }}{{ helper.link_params() }}">{{ schema_entity[entity_type]["name"]["value"] }}</a><br>
     {%- endfor %}
 </body>
 </html>
