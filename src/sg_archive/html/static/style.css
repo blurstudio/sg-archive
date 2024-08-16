@@ -78,7 +78,11 @@ span.field_name {
   font-style: italic;
 }
 
-div.field_value:hover {
+div.field_item {
+  border: 1px solid transparent;
+}
+
+div.field_item:hover {
   border: 1px solid black;
 }
 

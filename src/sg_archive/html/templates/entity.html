@@ -42,11 +42,13 @@
     <h2>Details</h2>
     <div class="field">
     {%- for field in fields %}
-        <div class="field_name">
-            {{ helper.field_name(entity["type"], field) }} - <span class="field_name">{{ field }}</span>
-        </div>
-        <div class="field_value">
-            {{ helper.fmt_sg_value(entity, field)|safe }}
+        <div class="field_item">
+            <div class="field_name">
+                {{ helper.field_name(entity["type"], field) }} - <span class="field_name">{{ field }}</span>
+            </div>
+            <div class="field_value">
+                {{ helper.fmt_sg_value(entity, field)|safe }}
+            </div>
         </div>
     {%- endfor %}
     </div>
