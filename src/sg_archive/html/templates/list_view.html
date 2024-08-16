@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/static/style.css">
+    <title>{{ entity_type }}'s</title>
+</head>
+<body>
+    {% include 'header.html' %}
+    <h1>{{ entity_type }}'s</h1>
+    <table class="list_view">
+        <tr>
+            <th>{{ entity_type }} Name</th>
+        {%- for field in fields %}
+            <th>{{ field_name(entity_type, field) }}</th>
+        {% endfor %}
+        </tr>
+        {%- for entity in entities %}
+        <tr>
+            <td>{{ entity_href(entity)|safe }}</td>
+            {%- for field in fields %}
+                <td>{{ fmt_sg_value(entity, field)|safe }}</td>
+            {%- endfor %}
+        </tr>
+        {%- endfor %}
+    </table>
+
+{% include 'footer.html' %}
+</body>
+</html>

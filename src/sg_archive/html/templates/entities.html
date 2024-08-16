@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/static/style.css">
+    <title>Entities</title>
+</head>
+<body>
+    {% include 'header.html' %}
+    {%- for entity_type in schema_entity %}
+    <a href="/list_view/{{ entity_type }}">{{ schema_entity[entity_type]["name"]["value"] }}</a><br>
+    {%- endfor %}
+</body>
+</html>
