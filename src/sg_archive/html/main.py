@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import escape
 
 from sg_archive.connection import Connection
 from sg_archive.shotgun import Shotgun
@@ -80,9 +81,7 @@ class Helper:
         name = (
             entity["name"] if "name" in entity else f"{entity['type']}({entity['id']})"
         )
-        return "<a href=/details/{}/{}>{}</a>".format(
-            entity["type"], entity["id"], name
-        )
+        return f"<a href=/details/{entity['type']}/{entity['id']}>{escape(name)}</a>"
 
     def field_data_type(self, entity_type, field):
         return (
@@ -114,19 +113,14 @@ class Helper:
             return markdown.markdown(value, extensions=["nl2br"])
         if data_type == "multi_entity":
             ret = [self.entity_href(v) for v in value]
-            return ", ".join(ret)
+            return "<br>".join(ret)
         if isinstance(value, dict) and "type" in value and "id" in value:
-            name = (
-                value["name"] if "name" in value else f"{value['type']}({value['id']})"
-            )
-            return "<a href=/details/{}/{}>{}</a>".format(
-                value["type"], value["id"], name
-            )
+            return self.entity_href(value)
         if isinstance(value, dict) and "name" in value:
-            return value["name"]
+            return escape(value["name"])
         if isinstance(value, list):
             return ", ".join([self.fmt_sg_value(v, "name") for v in value])
-        return value
+        return escape(value)
 
     def link_params(self):
         if self.request.query_params:
