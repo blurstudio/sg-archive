@@ -24,9 +24,13 @@ and points to the secret file. Here is a list of handled keys:
 
 - `connection_file` points to the secret file to authenticate with ShotGrid.
 - `ignored:data_types`: For all entity types, don't include any fields storing these data types in the archived data.
+- `ignored:entity_types`: A list of entity types to not show when listing available entity types.
 - `ignored:entities`: When listing available entities omit these.
 - `ignored:fields`: Don't include these specific field's when archiving a entity. A dictionary where the key is the entity type. The value is a list of field names to exclude.
 - `filters`: A dictionary of filters to apply when archiving a given entity type. A dictionary where the key is the entity type. The value is a filter passed to the `sg.find` call for that entity type.
+- `html`: Used to configure the "SG at home" website.
+- `html:exclude_details`: Don't show these fields in a entity details webpage. Respects a special `global` entity type that is are applied to all entity_types if it exists.
+- `html:list_fields`: Only show these fields in the entity list view in this order. The current list html isn't optimized to show extremely large data sets so showing too many fields in the list view may cause the browser tab to crash.
 
 To configure the cli you need to pass the `--config` path pointing to your copy of
 `config_example.yml`.
