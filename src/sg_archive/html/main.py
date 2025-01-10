@@ -44,7 +44,7 @@ def load_entity_type(entity_type, force=False):
     loaded_entity_types.add(entity_type)
 
 
-def sg_find(entity_type, keys=None, query=None, fields=None):
+def sg_find(entity_type, keys=None, query=None, fields=None, order=None):
     # Call out to sg api against your local files
     if fields is None:
         fields = sg.field_names_for_entity_type(entity_type)
@@ -59,6 +59,7 @@ def sg_find(entity_type, keys=None, query=None, fields=None):
             entity_type,
             query,
             sg.field_names_for_entity_type(entity_type),
+            order=order,
         ),
         fields,
     )
@@ -91,13 +92,26 @@ class Helper:
             .get("value", field)
         )
 
-    def field_name(self, entity_type, field):
-        return (
+    def field_order(self, field, order):
+        if not order or len(order) != 1:
+            # Don't show the order if not defined or its a complex order
+            return ""
+
+        if order and field == order[0].get("field_name"):
+            # 25B2: up arrow, 25BC: down arrow
+            arrow = "\u25B2" if order[0].get("direction") == "asc" else "\u25BC"
+            return f" {arrow}"
+        return ""
+
+    def field_name(self, entity_type, field, order=None):
+        name = (
             filtered_schema.get(entity_type, {})
             .get(field, {})
             .get("name", {})
             .get("value", field)
         )
+        order_text = self.field_order(field, order)
+        return name + order_text
 
     def fmt_sg_value(self, entity, field):
         if isinstance(entity, int):
@@ -167,6 +181,8 @@ class Helper:
                 # If the entity doesn't have this field, ignore it in selection
                 continue
             if key == "project":
+                if not value:
+                    continue
                 value = int(value)
                 query.append(["project", "is", {"type": "Project", "id": value}])
                 load_entity_type("Project")
@@ -240,8 +256,9 @@ async def details_entity(request: Request, entity_type: str, key: int):
 @app.get("/list_entities/{entity_type}", response_class=HTMLResponse)
 async def list_entities(request: Request, entity_type: str):
     helper = Helper(request)
+    order = html_cfg.get("sort_field", {}).get(entity_type, None)
     query = helper.sg_request_query(entity_type)
-    entities, fields = sg_find(entity_type, query=query)
+    entities, fields = sg_find(entity_type, query=query, order=order)
     show_fields = helper.list_fields(entity_type)
     return templates.TemplateResponse(
         "list_entities.html",
@@ -251,6 +268,7 @@ async def list_entities(request: Request, entity_type: str):
             "fields": show_fields,
             "entity_type": entity_type,
             "helper": helper,
+            "order": order,
         },
     )
 

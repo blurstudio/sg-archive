@@ -123,6 +123,21 @@ html:
       - id
       - sg_version_type
 
+  sort_field:
+    # Sort entities in the list view. The value is passed as order to the
+    # shotgun_api3 `find` method.
+    Asset:
+      - field_name: code
+        direction: asc
+    Note:
+      - field_name: subject
+        direction: asc
+      - field_name: content
+        direction: asc
+    Version:
+      - field_name: code
+        direction: asc
+
 # Filters can be used to define shotgun_api3 filters for each entity.
 # https://developers.shotgridsoftware.com/python-api/reference.html#shotgun_api3.shotgun.Shotgun.find
 # These are stored per entity_type
