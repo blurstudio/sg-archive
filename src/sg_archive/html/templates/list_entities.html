@@ -14,7 +14,7 @@
             <th>Details</th>
             {%- for field in fields %}
             <th>
-                <div class="tooltip">{{ helper.field_name(entity_type, field) }}
+                <div class="tooltip">{{ helper.field_name(entity_type, field, order) }}
                     <span class="tooltiptext">{{ field }}</span>
                 </div>
             </th>

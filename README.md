@@ -31,6 +31,7 @@ and points to the secret file. Here is a list of handled keys:
 - `html`: Used to configure the "SG at home" website.
 - `html:exclude_details`: Don't show these fields in a entity details webpage. Respects a special `global` entity type that is are applied to all entity_types if it exists.
 - `html:list_fields`: Only show these fields in the entity list view in this order. The current list html isn't optimized to show extremely large data sets so showing too many fields in the list view may cause the browser tab to crash.
+- `html:sort_field`: Control the order entities are shown in list views. Passed to the `sg.find` command as the order argument. Sorting is static and the user can't change it. In the html a sort direction icon is shown if you only use a single sort rule. Note: Currently this requires modifying [shotgun_api3's mockgun](https://github.com/blurstudio-forks/python-api/pull/1).
 
 To configure the cli you need to pass the `--config` path pointing to your copy of
 `config_example.yml`.
