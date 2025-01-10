@@ -20,17 +20,25 @@ ignored:
   entity_types:
     - Attachment
     - EventLogEntry
+    - Page
+    - PageHit
+    - PageSetting
+    - PermissionRuleSet
+    - RvLicense
+    - TimeLog
     - WorkDayRule
+    - Version_sg_uses_versions_Connection
 
   # Don't show these fields when selecting a specific entity
   fields:
     Attachment:
-      - filmstrip_image
-      - image
       - image_source_entity
+    Project:
+      - landing_page_url
     Version:
       - viewed_by_current_user
       - viewed_by_current_user_at
+
   # When processing attachments if these file extensions are encountered
   # record them but don't actually download the files. This is useful for
   # preventing downloading the source `sg_uploaded_movie` .mov file when
@@ -56,8 +64,19 @@ html:
       - image
       - image_blur_hash
       - image_source_entity
+    Version:
+      - filmstrip_image
+      - image
+      - image_blur_hash
+      - sg_uploaded_movie
+      - sg_uploaded_movie_image
+      - sg_uploaded_movie_mp4
+      - sg_uploaded_movie_transcoding_status
+      - sg_uploaded_movie_webm
+
   list_fields:
-    # Only show these fields in a list_entities view for each entity_type.
+    # Only show these fields in list_entities view for each entity_type.
+    # The field order is respected in the list view.
     Project:
       # - name
       - sg_status
@@ -68,12 +87,41 @@ html:
       - updated_at
       - updated_by
       - layout_project
+    Asset:
+      - code
+      - sg_status_list
+      - sg_asset_type
+      - description
+      - addressings_cc
+      - updated_at
+      - updated_by
+      - created_at
+      - created_by
+      - tags
+      - id
+      - linked_projects
+      - open_notes_count
+      - project
     Note:
       - sg_status_list
       - subject
-      - content
-      - client_approved
-      - client_note
+      - user
+      - id
+      - created_at
+      - sg_note_type
+      - project
+    Task:
+      - sg_status_list
+      - id
+      - tags
+      - sg_description
+      - project
+      - open_notes_count
+    Version:
+      - code
+      - sg_status_list
+      - id
+      - sg_version_type
 
 # Filters can be used to define shotgun_api3 filters for each entity.
 # https://developers.shotgridsoftware.com/python-api/reference.html#shotgun_api3.shotgun.Shotgun.find
